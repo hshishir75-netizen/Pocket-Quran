@@ -11,8 +11,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  BookOpen, 
-  Bookmark, 
+  BookOpenText,
+  Bookmark,
   Sparkles, 
   RefreshCw, 
   Play, 
@@ -35,8 +35,7 @@ import {
   Send,
   User,
   Bot,
-  Loader2,
-  MoonStar
+  Loader2
 } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import Markdown from 'react-markdown';
@@ -525,7 +524,7 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
         <div className="max-w-2xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-emerald-700/50 rounded-xl border border-emerald-500/30 shadow-inner">
-              <MoonStar className="w-6 h-6 text-amber-300 fill-amber-300" />
+              <BookOpenText className="w-6 h-6 text-amber-300 fill-amber-300/10" />
             </div>
             <div>
               <h1 className="text-xl font-bold tracking-tight">
@@ -766,7 +765,7 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
             >
               <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100">
                 <h3 className="text-emerald-800 font-bold flex items-center mb-2">
-                  <BookOpen className="w-5 h-5 mr-2" />
+                  <BookOpenText className="w-5 h-5 mr-2" />
                   Daily Reminder
                 </h3>
                 <p className="text-emerald-700 text-sm leading-relaxed">
@@ -852,7 +851,7 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
                               rel="noopener noreferrer"
                               className="inline-flex items-center text-slate-500 hover:text-emerald-600 font-medium text-sm transition-colors group w-fit"
                             >
-                              <BookOpen className="w-4 h-4 mr-2 group-hover:translate-x-0.5 transition-transform" />
+                              <BookOpenText className="w-4 h-4 mr-2 group-hover:translate-x-0.5 transition-transform" />
                               Read Full Surah
                             </a>
                           </div>
@@ -978,7 +977,7 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center text-slate-400 hover:text-emerald-600 font-medium text-[10px] transition-colors group w-fit"
                               >
-                                <BookOpen className="w-3 h-3 mr-1 group-hover:translate-x-0.5 transition-transform" />
+                                <BookOpenText className="w-3 h-3 mr-1 group-hover:translate-x-0.5 transition-transform" />
                                 Read Full Surah
                               </a>
                             </div>
