@@ -60,6 +60,7 @@ export default function App() {
   const [view, setView] = useState<'dashboard' | 'daily-ayah' | 'bookmarks'>('dashboard');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [prayerTimes, setPrayerTimes] = useState<Record<string, string> | null>(null);
+  const [prayerStatus, setPrayerStatus] = useState<{ current: string; next: string; remaining: string } | null>(null);
   const [ayah, setAyah] = useState<Ayah | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -97,7 +98,13 @@ export default function App() {
 
     // Clock Logic
     const timer = setInterval(() => {
-      setCurrentTime(new Date());
+      const now = new Date();
+      setCurrentTime(now);
+      
+      // Update prayer status if times are available
+      if (prayerTimes) {
+        updatePrayerStatus(now, prayerTimes);
+      }
     }, 1000);
 
     // Prayer Times Logic
@@ -109,6 +116,7 @@ export default function App() {
           const data = await response.json();
           if (data.code === 200) {
             setPrayerTimes(data.data.timings);
+            updatePrayerStatus(new Date(), data.data.timings);
           }
         } catch (err) {
           console.error("Error fetching prayer times:", err);
@@ -117,7 +125,54 @@ export default function App() {
     }
 
     return () => clearInterval(timer);
-  }, []);
+  }, [prayerTimes]);
+
+  const updatePrayerStatus = (now: Date, timings: Record<string, string>) => {
+    const prayers = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+    const prayerDates = prayers.map(name => {
+      const [hours, minutes] = timings[name].split(':').map(Number);
+      const d = new Date(now);
+      d.setHours(hours, minutes, 0, 0);
+      return { name, date: d };
+    });
+
+    let current = '';
+    let nextIdx = -1;
+
+    // Find the next prayer
+    for (let i = 0; i < prayerDates.length; i++) {
+      if (prayerDates[i].date > now) {
+        nextIdx = i;
+        break;
+      }
+    }
+
+    let nextPrayerDate: Date;
+    let nextName: string;
+
+    if (nextIdx === -1) {
+      // All prayers for today have passed, next is Fajr tomorrow
+      current = 'Isha';
+      nextName = 'Fajr';
+      nextPrayerDate = new Date(prayerDates[0].date);
+      nextPrayerDate.setDate(nextPrayerDate.getDate() + 1);
+    } else {
+      nextName = prayerDates[nextIdx].name;
+      nextPrayerDate = prayerDates[nextIdx].date;
+      current = nextIdx === 0 ? 'Isha' : prayers[nextIdx - 1];
+    }
+
+    const diff = nextPrayerDate.getTime() - now.getTime();
+    const h = Math.floor(diff / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    const s = Math.floor((diff % 60000) / 1000);
+
+    setPrayerStatus({
+      current,
+      next: nextName,
+      remaining: `${h}h ${m}m ${s}s`
+    });
+  };
 
   // --- 2. API USAGE: FETCH RANDOM AYAH (DETECTION-BASED 2-STEP APPROACH) ---
   const fetchRandomAyah = useCallback(async () => {
@@ -325,13 +380,13 @@ export default function App() {
               className="space-y-6"
             >
               {/* Clock and Calendar Card */}
-              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden p-8">
-                <div className="flex flex-col items-center text-center space-y-6">
-                  <div className="bg-emerald-50 p-4 rounded-full">
-                    <Clock className="w-12 h-12 text-emerald-600" />
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden p-6">
+                <div className="flex flex-col items-center text-center space-y-4">
+                  <div className="bg-emerald-50 p-3 rounded-full">
+                    <Clock className="w-8 h-8 text-emerald-600" />
                   </div>
                   <div>
-                    <h2 className="text-5xl font-black text-slate-800 tracking-tighter">
+                    <h2 className="text-3xl font-black text-slate-800 tracking-tight">
                       {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                     </h2>
                     <p className="text-slate-400 font-bold uppercase tracking-widest mt-2">Current Time</p>
@@ -394,7 +449,16 @@ export default function App() {
 
               {/* Prayer Times Card */}
               <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden p-6">
-                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-6 text-center">Prayer Times</h3>
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Prayer Times</h3>
+                  {prayerStatus && (
+                    <div className="bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">
+                      <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">
+                        Next: {prayerStatus.next} in {prayerStatus.remaining}
+                      </span>
+                    </div>
+                  )}
+                </div>
                 <div className="grid grid-cols-5 gap-2">
                   {[
                     { name: 'Fajr', key: 'Fajr', icon: Sunrise, color: 'text-amber-500' },
@@ -402,17 +466,25 @@ export default function App() {
                     { name: 'Asr', key: 'Asr', icon: SunDim, color: 'text-amber-600' },
                     { name: 'Maghrib', key: 'Maghrib', icon: Sunset, color: 'text-rose-500' },
                     { name: 'Isha', key: 'Isha', icon: Moon, color: 'text-indigo-600' },
-                  ].map((prayer) => (
-                    <div key={prayer.name} className="flex flex-col items-center space-y-2">
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">{prayer.name}</span>
-                      <div className={`p-2 rounded-xl bg-slate-50 ${prayer.color}`}>
-                        <prayer.icon className="w-5 h-5" />
+                  ].map((prayer) => {
+                    const isActive = prayerStatus?.current === prayer.name;
+                    return (
+                      <div key={prayer.name} className={`flex flex-col items-center space-y-2 p-2 rounded-2xl transition-all duration-300 ${isActive ? 'bg-emerald-50 ring-1 ring-emerald-200 scale-105' : ''}`}>
+                        <span className={`text-[9px] font-bold uppercase tracking-tighter ${isActive ? 'text-emerald-700' : 'text-slate-500'}`}>
+                          {prayer.name}
+                        </span>
+                        <div className={`p-2 rounded-xl ${isActive ? 'bg-white shadow-sm' : 'bg-slate-50'} ${prayer.color}`}>
+                          <prayer.icon className="w-5 h-5" />
+                        </div>
+                        <span className={`text-[10px] font-bold ${isActive ? 'text-emerald-900' : 'text-slate-800'}`}>
+                          {prayerTimes ? prayerTimes[prayer.key] : '--:--'}
+                        </span>
+                        {isActive && (
+                          <span className="text-[8px] font-bold text-emerald-600 uppercase animate-pulse">Now</span>
+                        )}
                       </div>
-                      <span className="text-xs font-black text-slate-800">
-                        {prayerTimes ? prayerTimes[prayer.key] : '--:--'}
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
