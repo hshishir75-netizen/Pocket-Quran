@@ -1,5 +1,5 @@
 {
-  "name": "Quran Habit Builder",
+  "name": "Pocket Quran",
   "description": "A modern web application to help users build a daily habit of reading and listening to the Quran with random ayahs, audio recitations, streak tracking, and bookmarks.",
-  "requestFramePermissions": []
+  "requestFramePermissions": ["geolocation"]
 }

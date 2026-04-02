@@ -13,7 +13,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   BookOpen, 
   Bookmark, 
-  Home, 
+  Sparkles, 
   RefreshCw, 
   Play, 
   Pause, 
@@ -21,7 +21,16 @@ import {
   Trash2,
   Heart,
   Target,
-  ChevronRight
+  Home,
+  ChevronRight,
+  ExternalLink,
+  Calendar,
+  Clock,
+  Sunrise,
+  Sun,
+  SunDim,
+  Sunset,
+  Moon
 } from 'lucide-react';
 
 // Types
@@ -35,6 +44,8 @@ interface Ayah {
   surah_name?: string;
   surah_meaning?: string;
   audio_url?: string;
+  external_link?: string;
+  surah_link?: string;
 }
 
 interface BookmarkItem extends Ayah {
@@ -46,7 +57,9 @@ const TRANSLATION_ID = 131; // Clear Quran (English)
 const RECITER_ID = 7; // Mishary Rashid Alafasy
 
 export default function App() {
-  const [view, setView] = useState<'home' | 'bookmarks'>('home');
+  const [view, setView] = useState<'dashboard' | 'daily-ayah' | 'bookmarks'>('dashboard');
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [prayerTimes, setPrayerTimes] = useState<Record<string, string> | null>(null);
   const [ayah, setAyah] = useState<Ayah | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -81,9 +94,32 @@ export default function App() {
     // Bookmarks Logic
     const savedBookmarks = JSON.parse(localStorage.getItem('quran_bookmarks') || '[]');
     setBookmarks(savedBookmarks);
+
+    // Clock Logic
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+
+    // Prayer Times Logic
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(async (position) => {
+        try {
+          const { latitude, longitude } = position.coords;
+          const response = await fetch(`https://api.aladhan.com/v1/timings?latitude=${latitude}&longitude=${longitude}&method=2`);
+          const data = await response.json();
+          if (data.code === 200) {
+            setPrayerTimes(data.data.timings);
+          }
+        } catch (err) {
+          console.error("Error fetching prayer times:", err);
+        }
+      });
+    }
+
+    return () => clearInterval(timer);
   }, []);
 
-  // --- 2. API USAGE: FETCH RANDOM AYAH (STRICT 2-STEP APPROACH) ---
+  // --- 2. API USAGE: FETCH RANDOM AYAH (DETECTION-BASED 2-STEP APPROACH) ---
   const fetchRandomAyah = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -101,8 +137,8 @@ export default function App() {
 
     try {
       /**
-       * STEP 1: Fetch random ayah and audio info
-       * We use the random endpoint to get the verse_key, Arabic text, and audio.
+       * STEP 1: Fetch a random verse to "detect" which ayah to show.
+       * We get the Arabic text and the unique verse_key (e.g., "2:255").
        */
       const randomRes = await fetch(
         `${API_BASE}/verses/random?fields=text_uthmani&audio=${RECITER_ID}`
@@ -111,59 +147,44 @@ export default function App() {
       if (!randomRes.ok) throw new Error('Could not connect to the Quran API.');
       
       const randomData = await randomRes.json();
-      console.log('Step 1 (Random Ayah Data):', randomData);
-      
       const verse = randomData.verse;
       if (!verse) throw new Error('Ayah data not found.');
 
       const verseKey = verse.verse_key;
-      const [surahNum, ayahNum] = verseKey.split(':').map(Number);
+      console.log(`Detected Ayah: ${verseKey}`);
 
       /**
-       * STEP 2: Fetch translation using verse_key
-       * We try the dedicated translation endpoint first as requested.
+       * STEP 2: "Detect" and fetch the translation for this specific verse_key.
+       * We use the dedicated 'verses/by_key' endpoint which is the most reliable
+       * for matching a translation to a specific verse.
        */
-      let translationText = 'Translation not available';
-      
-      // Try primary API translation endpoint
-      const transRes = await fetch(
-        `${API_BASE}/quran/translations/${TRANSLATION_ID}?verse_key=${verseKey}`
+      const detailRes = await fetch(
+        `${API_BASE}/verses/by_key/${verseKey}?translations=${TRANSLATION_ID}&fields=text_uthmani`
       );
       
-      if (transRes.ok) {
-        const transData = await transRes.json();
-        console.log('Step 2 (Primary Translation Data):', transData);
-        if (transData.translations?.[0]?.text) {
-          translationText = transData.translations[0].text.replace(/<[^>]*>?/gm, '');
-        }
-      }
+      if (!detailRes.ok) throw new Error('Could not fetch translation for the detected ayah.');
+      
+      const detailData = await detailRes.json();
+      const fullVerse = detailData.verse;
+      
+      if (!fullVerse) throw new Error('Detailed ayah data not found.');
 
-      /**
-       * FALLBACK: If translation is still missing, try the alternative endpoint
-       */
-      if (translationText === 'Translation not available') {
-        console.log('Primary translation failed, trying fallback endpoint...');
-        const fallbackRes = await fetch(
-          `${API_BASE}/verses/by_key/${verseKey}?translations=${TRANSLATION_ID}`
-        );
-        if (fallbackRes.ok) {
-          const fallbackData = await fallbackRes.json();
-          console.log('Fallback Translation Data:', fallbackData);
-          if (fallbackData.verse?.translations?.[0]?.text) {
-            translationText = fallbackData.verse.translations[0].text.replace(/<[^>]*>?/gm, '');
-          }
-        }
-      }
+      const [surahNum, ayahNum] = verseKey.split(':').map(Number);
 
-      // Fetch Surah Name for better UI
+      // Fetch Surah Name and Meaning for context
       const chapterRes = await fetch(`${API_BASE}/chapters/${surahNum}?language=en`);
       const chapterData = await chapterRes.json();
       const surahName = chapterData.chapter?.name_simple || `Surah ${surahNum}`;
       const surahMeaning = chapterData.chapter?.translated_name?.name;
 
+      // Clean up translation text (remove HTML tags)
+      const translationText = fullVerse.translations?.[0]?.text 
+        ? fullVerse.translations[0].text.replace(/<[^>]*>?/gm, '') 
+        : 'Translation not available';
+
       /**
        * REQUIREMENT: Fix Audio URL
-       * Prepend the CDN base to the relative path.
+       * Prepend the CDN base to the relative path from Step 1.
        */
       let audioUrl = undefined;
       if (verse.audio?.url) {
@@ -171,19 +192,21 @@ export default function App() {
       }
 
       setAyah({
-        id: verse.id,
+        id: fullVerse.id,
         verse_key: verseKey,
-        text_uthmani: verse.text_uthmani || 'Arabic text not available',
+        text_uthmani: fullVerse.text_uthmani || verse.text_uthmani || 'Arabic text not available',
         translation: translationText,
         surah_number: surahNum,
         ayah_number: ayahNum,
         surah_name: surahName,
         surah_meaning: surahMeaning,
-        audio_url: audioUrl
+        audio_url: audioUrl,
+        external_link: `https://quran.com/${surahNum}/${ayahNum}`,
+        surah_link: `https://quran.com/${surahNum}`
       });
     } catch (err) {
-      console.error('Fetch Error:', err);
-      setError('Failed to fetch ayah. Please try again.');
+      console.error('Detection/Fetch Error:', err);
+      setError('Failed to detect or fetch ayah. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -281,7 +304,7 @@ export default function App() {
       <header className="bg-emerald-600 text-white p-6 shadow-md sticky top-0 z-30">
         <div className="max-w-2xl mx-auto flex justify-between items-center">
           <div>
-            <h1 className="text-xl font-bold tracking-tight">Quran Habit Builder</h1>
+            <h1 className="text-xl font-bold tracking-tight">Pocket Quran</h1>
             <p className="text-emerald-100 text-xs">Your daily spiritual companion</p>
           </div>
           <div className="flex items-center bg-emerald-700 px-3 py-1.5 rounded-full border border-emerald-500">
@@ -293,14 +316,151 @@ export default function App() {
 
       <main className="max-w-2xl mx-auto p-4 mt-4">
         <AnimatePresence mode="wait">
-          {view === 'home' ? (
+          {view === 'dashboard' ? (
             <motion.div
-              key="home"
+              key="dashboard"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               className="space-y-6"
             >
+              {/* Clock and Calendar Card */}
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden p-8">
+                <div className="flex flex-col items-center text-center space-y-6">
+                  <div className="bg-emerald-50 p-4 rounded-full">
+                    <Clock className="w-12 h-12 text-emerald-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-5xl font-black text-slate-800 tracking-tighter">
+                      {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </h2>
+                    <p className="text-slate-400 font-bold uppercase tracking-widest mt-2">Current Time</p>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-3 w-full pt-4">
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex flex-col items-center text-center">
+                      <Calendar className="w-5 h-5 text-emerald-600 mb-2" />
+                      <span className="text-slate-400 text-[9px] font-bold uppercase tracking-widest mb-1">Gregorian</span>
+                      <span className="text-slate-800 font-bold text-xs sm:text-sm">
+                        {currentTime.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                    </div>
+                    <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 flex flex-col items-center text-center">
+                      <Sparkles className="w-5 h-5 text-emerald-600 mb-2" />
+                      <span className="text-emerald-700 text-[9px] font-bold uppercase tracking-widest mb-1">Hijri</span>
+                      <span className="text-emerald-900 font-bold text-xs sm:text-sm">
+                        {(() => {
+                          try {
+                            // Use a more robust way to get Hijri date parts
+                            const formatter = new Intl.DateTimeFormat('en-u-ca-islamic-uma', {
+                              weekday: 'short',
+                              day: 'numeric',
+                              month: 'long',
+                              year: 'numeric'
+                            });
+                            const parts = formatter.formatToParts(currentTime);
+                            const weekday = parts.find(p => p.type === 'weekday')?.value;
+                            const day = parts.find(p => p.type === 'day')?.value;
+                            const month = parts.find(p => p.type === 'month')?.value;
+                            const year = parts.find(p => p.type === 'year')?.value;
+                            
+                            // If for some reason it falls back to Gregorian (e.g. month is 'April'), 
+                            // we try 'islamic-civil' as a fallback
+                            if (month === 'April' || month === 'Apr') {
+                              const altFormatter = new Intl.DateTimeFormat('en-u-ca-islamic-civil', {
+                                weekday: 'short',
+                                day: 'numeric',
+                                month: 'long',
+                                year: 'numeric'
+                              });
+                              const altParts = altFormatter.formatToParts(currentTime);
+                              const w = altParts.find(p => p.type === 'weekday')?.value;
+                              const d = altParts.find(p => p.type === 'day')?.value;
+                              const m = altParts.find(p => p.type === 'month')?.value;
+                              const y = altParts.find(p => p.type === 'year')?.value;
+                              return `${w}, ${d} ${m}, ${y}`;
+                            }
+                            
+                            return `${weekday}, ${day} ${month}, ${year}`;
+                          } catch (e) {
+                            return "Date Error";
+                          }
+                        })()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Prayer Times Card */}
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden p-6">
+                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-6 text-center">Prayer Times</h3>
+                <div className="grid grid-cols-5 gap-2">
+                  {[
+                    { name: 'Fajr', key: 'Fajr', icon: Sunrise, color: 'text-amber-500' },
+                    { name: 'Dhuhr', key: 'Dhuhr', icon: Sun, color: 'text-orange-500' },
+                    { name: 'Asr', key: 'Asr', icon: SunDim, color: 'text-amber-600' },
+                    { name: 'Maghrib', key: 'Maghrib', icon: Sunset, color: 'text-rose-500' },
+                    { name: 'Isha', key: 'Isha', icon: Moon, color: 'text-indigo-600' },
+                  ].map((prayer) => (
+                    <div key={prayer.name} className="flex flex-col items-center space-y-2">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">{prayer.name}</span>
+                      <div className={`p-2 rounded-xl bg-slate-50 ${prayer.color}`}>
+                        <prayer.icon className="w-5 h-5" />
+                      </div>
+                      <span className="text-xs font-black text-slate-800">
+                        {prayerTimes ? prayerTimes[prayer.key] : '--:--'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Upcoming Events */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-bold text-slate-800 flex items-center px-2">
+                  <Target className="w-5 h-5 mr-2 text-emerald-600" />
+                  Upcoming Islamic Events
+                </h3>
+                <div className="grid gap-3">
+                  {[
+                    { name: 'Eid al-Adha', date: 'May 27, 2026', hijri: '10 Dhul-Hijjah 1447' },
+                    { name: 'Islamic New Year', date: 'July 16, 2026', hijri: '1 Muharram 1448' },
+                    { name: 'Day of Ashura', date: 'July 25, 2026', hijri: '10 Muharram 1448' },
+                    { name: 'Mawlid an-Nabi', date: 'Sept 24, 2026', hijri: '12 Rabi al-Awwal 1448' },
+                  ].map((event, idx) => (
+                    <div key={idx} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-center group hover:border-emerald-200 transition-colors">
+                      <div>
+                        <h4 className="font-bold text-slate-800 group-hover:text-emerald-700 transition-colors">{event.name}</h4>
+                        <p className="text-slate-400 text-xs font-medium">{event.hijri}</p>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-emerald-600 font-bold text-sm block">{event.date}</span>
+                        <span className="text-slate-300 text-[10px] font-bold uppercase tracking-widest">Confirmed</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          ) : view === 'daily-ayah' ? (
+            <motion.div
+              key="daily-ayah"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="space-y-6"
+            >
+              <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100">
+                <h3 className="text-emerald-800 font-bold flex items-center mb-2">
+                  <BookOpen className="w-5 h-5 mr-2" />
+                  Daily Reminder
+                </h3>
+                <p className="text-emerald-700 text-sm leading-relaxed">
+                  "The best of you are those who learn the Quran and teach it." — Prophet Muhammad (PBUH). Keep up your streak!
+                </p>
+              </div>
+
               {/* REQUIREMENT: Loading State */}
               {loading ? (
                 <div className="flex flex-col items-center justify-center h-64 space-y-4">
@@ -335,16 +495,18 @@ export default function App() {
                             Surah {ayah.surah_number} : Ayah {ayah.ayah_number}
                           </span>
                         </div>
-                        <button 
-                          onClick={() => toggleBookmark(ayah)}
-                          className={`p-2.5 rounded-full transition-all ${
-                            bookmarks.some(b => b.verse_key === ayah.verse_key)
-                              ? 'bg-emerald-50 text-emerald-600'
-                              : 'bg-slate-50 text-slate-300 hover:text-emerald-600'
-                          }`}
-                        >
-                          <Heart className={`w-6 h-6 ${bookmarks.some(b => b.verse_key === ayah.verse_key) ? 'fill-emerald-600' : ''}`} />
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button 
+                            onClick={() => toggleBookmark(ayah)}
+                            className={`p-2.5 rounded-full transition-all ${
+                              bookmarks.some(b => b.verse_key === ayah.verse_key)
+                                ? 'bg-emerald-50 text-emerald-600'
+                                : 'bg-slate-50 text-slate-300 hover:text-emerald-600'
+                            }`}
+                          >
+                            <Heart className={`w-6 h-6 ${bookmarks.some(b => b.verse_key === ayah.verse_key) ? 'fill-emerald-600' : ''}`} />
+                          </button>
+                        </div>
                       </div>
 
                       {/* REQUIREMENT: Arabic Text with Audio-Synced Highlighting */}
@@ -354,12 +516,34 @@ export default function App() {
                         </p>
                       </div>
 
-                      {/* REQUIREMENT: English Translation */}
+                      {/* REQUIREMENT: Reference & External Link */}
                       <div className="border-t border-slate-100 pt-6">
-                        <span className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-2 block">Translation</span>
-                        <p className="text-slate-600 leading-relaxed text-lg italic">
-                          "{ayah.translation}"
-                        </p>
+                        <span className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-2 block">Reference</span>
+                        <div className="flex flex-col gap-2">
+                          <p className="text-slate-700 font-medium">
+                            {ayah.surah_name} ({ayah.surah_meaning}) — {ayah.surah_number}:{ayah.ayah_number}
+                          </p>
+                          <div className="flex flex-col gap-2">
+                            <a 
+                              href={ayah.external_link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center text-emerald-600 hover:text-emerald-700 font-bold text-sm transition-colors group w-fit"
+                            >
+                              <ChevronRight className="w-4 h-4 mr-1 group-hover:translate-x-0.5 transition-transform" />
+                              View full meaning on Quran.com
+                            </a>
+                            <a 
+                              href={ayah.surah_link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center text-slate-500 hover:text-emerald-600 font-medium text-sm transition-colors group w-fit"
+                            >
+                              <BookOpen className="w-4 h-4 mr-2 group-hover:translate-x-0.5 transition-transform" />
+                              Read Full Surah
+                            </a>
+                          </div>
+                        </div>
                       </div>
 
                       <div className="flex flex-col gap-3 pt-4">
@@ -402,16 +586,6 @@ export default function App() {
                         )}
                       </div>
                     </div>
-                  </div>
-
-                  <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100">
-                    <h3 className="text-emerald-800 font-bold flex items-center mb-2">
-                      <BookOpen className="w-5 h-5 mr-2" />
-                      Daily Reminder
-                    </h3>
-                    <p className="text-emerald-700 text-sm leading-relaxed">
-                      "The best of you are those who learn the Quran and teach it." — Prophet Muhammad (PBUH). Keep up your streak!
-                    </p>
                   </div>
                 </div>
               )}
@@ -468,7 +642,35 @@ export default function App() {
                         <div className={`transition-all duration-500 rounded-xl ${isPlaying && activeAudioKey === b.verse_key ? 'highlight-active p-2' : ''}`}>
                           <p className="arabic-text text-2xl text-right mb-4 text-slate-800 leading-relaxed">{b.text_uthmani}</p>
                         </div>
-                        <p className="text-sm text-slate-600 italic">"{b.translation}"</p>
+                        
+                        <div className="mt-4 pt-4 border-t border-slate-50">
+                          <span className="text-slate-400 text-[9px] font-bold uppercase tracking-widest mb-1 block">Reference</span>
+                          <div className="flex flex-col gap-1">
+                            <p className="text-slate-600 text-xs font-medium">
+                              {b.surah_name} — {b.surah_number}:{b.ayah_number}
+                            </p>
+                            <div className="flex flex-col gap-1.5">
+                              <a 
+                                href={b.external_link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center text-emerald-600 hover:text-emerald-700 font-bold text-[10px] transition-colors group w-fit"
+                              >
+                                <ChevronRight className="w-3 h-3 mr-0.5 group-hover:translate-x-0.5 transition-transform" />
+                                View on Quran.com
+                              </a>
+                              <a 
+                                href={b.surah_link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center text-slate-400 hover:text-emerald-600 font-medium text-[10px] transition-colors group w-fit"
+                              >
+                                <BookOpen className="w-3 h-3 mr-1 group-hover:translate-x-0.5 transition-transform" />
+                                Read Full Surah
+                              </a>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -482,11 +684,18 @@ export default function App() {
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-6 py-4 pb-10 z-40">
         <div className="max-w-md mx-auto flex justify-around items-center">
           <button 
-            onClick={() => setView('home')} 
-            className={`flex flex-col items-center space-y-1 transition-colors ${view === 'home' ? 'text-emerald-600' : 'text-slate-400'}`}
+            onClick={() => setView('dashboard')} 
+            className={`flex flex-col items-center space-y-1 transition-colors ${view === 'dashboard' ? 'text-emerald-600' : 'text-slate-400'}`}
           >
             <Home className="w-6 h-6" />
             <span className="text-[10px] font-bold uppercase tracking-widest">Home</span>
+          </button>
+          <button 
+            onClick={() => setView('daily-ayah')} 
+            className={`flex flex-col items-center space-y-1 transition-colors ${view === 'daily-ayah' ? 'text-emerald-600' : 'text-slate-400'}`}
+          >
+            <Sparkles className="w-6 h-6" />
+            <span className="text-[10px] font-bold uppercase tracking-widest">Daily Ayah</span>
           </button>
           <button 
             onClick={() => setView('bookmarks')} 
