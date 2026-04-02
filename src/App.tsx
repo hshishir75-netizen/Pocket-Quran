@@ -33,6 +33,7 @@ interface Ayah {
   surah_number: number;
   ayah_number: number;
   surah_name?: string;
+  surah_meaning?: string;
   audio_url?: string;
 }
 
@@ -89,9 +90,11 @@ export default function App() {
     setAudioLoading(false);
     setAudioError(null);
     
-    // Stop any current audio
+    // Stop and cleanup any current audio
     if (audioRef.current) {
       audioRef.current.pause();
+      audioRef.current.src = "";
+      audioRef.current.load();
       audioRef.current = null;
     }
 
@@ -99,10 +102,6 @@ export default function App() {
       /**
        * REQUIREMENT: Use this endpoint for both Ayah and Audio
        * https://api.quran.com/api/v4/verses/random?translations=131&audio=7
-       * 
-       * translations=131: The Clear Quran (English)
-       * audio=7: Mishary Rashid Alafasy recitation
-       * fields=text_uthmani: Arabic text in Uthmani script
        */
       const response = await fetch(
         `${API_BASE}/verses/random?translations=${TRANSLATION_ID}&audio=${RECITER_ID}&fields=text_uthmani`
@@ -111,31 +110,55 @@ export default function App() {
       if (!response.ok) throw new Error('Could not connect to the Quran API.');
       
       const data = await response.json();
-      const verse = data.verse;
+      let verse = data.verse;
 
-      // Defensive check: Ensure verse exists
       if (!verse) throw new Error('Ayah data not found.');
 
-      // Extract Surah and Ayah numbers from verse_key (e.g., "1:1")
+      // FALLBACK: If random endpoint didn't return translations or audio, fetch by key
+      // Sometimes the random endpoint returns a simplified object
+      if (!verse.translations?.length || !verse.audio?.url) {
+        const detailRes = await fetch(
+          `${API_BASE}/verses/by_key/${verse.verse_key}?translations=${TRANSLATION_ID}&audio=${RECITER_ID}&fields=text_uthmani`
+        );
+        if (detailRes.ok) {
+          const detailData = await detailRes.json();
+          if (detailData.verse) {
+            verse = detailData.verse;
+          }
+        }
+      }
+
       const [surahNum, ayahNum] = verse.verse_key.split(':').map(Number);
 
-      // Fetch Surah Name separately for a better UI experience
+      // Fetch Surah Name and Meaning
       const chapterRes = await fetch(`${API_BASE}/chapters/${surahNum}?language=en`);
       const chapterData = await chapterRes.json();
       const surahName = chapterData.chapter?.name_simple || `Surah ${surahNum}`;
+      const surahMeaning = chapterData.chapter?.translated_name?.name;
 
       /**
-       * REQUIREMENT: Extract Audio URL
-       * The 'audio' parameter in the API adds an 'audio' object to the verse.
-       * We access verse.audio.url and prepend the base audio URL if necessary.
+       * REQUIREMENT: Correct Audio URL Handling
+       * The API returns a relative path like "/audio/7/xxx.mp3".
+       * We MUST prepend "https://audio.qurancdn.com" to make it a full playable URL.
        */
-      const audioPath = verse.audio?.url;
-      const audioUrl = audioPath 
-        ? (audioPath.startsWith('http') ? audioPath : `https://audio.quran.com/${audioPath}`) 
-        : undefined;
+      let audioUrl = undefined;
+      const audioPath = verse.audio?.url || verse.audio_file?.url;
+      
+      if (audioPath) {
+        // If it's already a full URL, use it; otherwise, prepend the CDN base
+        audioUrl = audioPath.startsWith('http') 
+          ? audioPath 
+          : `https://audio.qurancdn.com/${audioPath.startsWith('/') ? audioPath.slice(1) : audioPath}`;
+      }
 
-      // REQUIREMENT: Safely access translation using optional chaining
-      const translationText = verse.translations?.[0]?.text?.replace(/<[^>]*>?/gm, '') || 'Translation not available';
+      /**
+       * REQUIREMENT: Safely access translation
+       * We try multiple paths to be extremely robust
+       */
+      const translation = verse.translations?.[0]?.text || verse.translation?.text;
+      const translationText = translation 
+        ? translation.replace(/<[^>]*>?/gm, '') 
+        : 'Translation not available';
 
       setAyah({
         id: verse.id,
@@ -145,11 +168,12 @@ export default function App() {
         surah_number: surahNum,
         ayah_number: ayahNum,
         surah_name: surahName,
+        surah_meaning: surahMeaning,
         audio_url: audioUrl
       });
     } catch (err) {
       console.error('Fetch Error:', err);
-      setError('Failed to fetch ayah. Please check your internet connection.');
+      setError('Failed to fetch ayah. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -171,14 +195,18 @@ export default function App() {
       setAudioLoading(true);
       setAudioError(null);
       
-      const audio = new Audio(ayah.audio_url);
+      const audio = new Audio();
+      // Set source and load explicitly
+      audio.src = ayah.audio_url;
+      audio.load();
+      
       audioRef.current = audio;
 
-      audio.oncanplaythrough = () => {
+      audio.oncanplay = () => {
         setAudioLoading(false);
         audio.play().catch((err) => {
           console.error('Playback error:', err);
-          setAudioError('Playback failed. Try again.');
+          setAudioError('Playback failed. Tap again.');
           setIsPlaying(false);
         });
         setIsPlaying(true);
@@ -190,8 +218,9 @@ export default function App() {
       
       audio.onerror = () => {
         setAudioLoading(false);
-        setAudioError('Failed to load audio');
+        setAudioError('Audio file could not be loaded');
         setIsPlaying(false);
+        audioRef.current = null;
       };
     } else {
       if (isPlaying) {
@@ -268,7 +297,12 @@ export default function App() {
                     <div className="p-8 space-y-8">
                       <div className="flex justify-between items-center">
                         <div className="flex flex-col">
-                          <span className="text-emerald-700 font-bold text-lg">{ayah.surah_name}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-emerald-700 font-bold text-lg">{ayah.surah_name}</span>
+                            {ayah.surah_meaning && (
+                              <span className="text-slate-400 text-sm font-medium">({ayah.surah_meaning})</span>
+                            )}
+                          </div>
                           <span className="text-slate-400 text-xs font-bold uppercase tracking-widest">
                             Surah {ayah.surah_number} : Ayah {ayah.ayah_number}
                           </span>
@@ -285,13 +319,16 @@ export default function App() {
                         </button>
                       </div>
 
-                      {/* REQUIREMENT: Arabic Text */}
-                      <p className="arabic-text text-4xl md:text-5xl leading-[1.8] text-right text-slate-800 py-4">
-                        {ayah.text_uthmani}
-                      </p>
+                      {/* REQUIREMENT: Arabic Text with Audio-Synced Highlighting */}
+                      <div className={`p-4 transition-all duration-500 ${isPlaying ? 'highlight-active' : ''}`}>
+                        <p className="arabic-text text-4xl md:text-5xl leading-[1.8] text-right text-slate-800">
+                          {ayah.text_uthmani}
+                        </p>
+                      </div>
 
                       {/* REQUIREMENT: English Translation */}
                       <div className="border-t border-slate-100 pt-6">
+                        <span className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-2 block">Translation</span>
                         <p className="text-slate-600 leading-relaxed text-lg italic">
                           "{ayah.translation}"
                         </p>
@@ -371,7 +408,7 @@ export default function App() {
                     <div key={b.verse_key} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative group">
                       <div className="flex justify-between items-start mb-4">
                         <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full">
-                          {b.surah_name} : {b.ayah_number}
+                          {b.surah_name} {b.surah_meaning && `(${b.surah_meaning})`} : {b.ayah_number}
                         </span>
                         <button 
                           onClick={() => toggleBookmark(b)}

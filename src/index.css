@@ -14,3 +14,20 @@ body {
   font-family: var(--font-arabic);
   direction: rtl;
 }
+
+.highlight-active {
+  @apply bg-emerald-50/50 rounded-2xl shadow-[0_0_20px_rgba(16,185,129,0.2)];
+  animation: pulse-glow 2s infinite ease-in-out;
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.1);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(16, 185, 129, 0.3);
+    transform: scale(1.01);
+  }
+}
