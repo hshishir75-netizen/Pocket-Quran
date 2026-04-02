@@ -51,6 +51,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [activeAudioKey, setActiveAudioKey] = useState<string | null>(null);
   const [audioLoading, setAudioLoading] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -82,7 +83,7 @@ export default function App() {
     setBookmarks(savedBookmarks);
   }, []);
 
-  // --- 2. API USAGE: FETCH RANDOM AYAH ---
+  // --- 2. API USAGE: FETCH RANDOM AYAH (STRICT 2-STEP APPROACH) ---
   const fetchRandomAyah = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -100,69 +101,78 @@ export default function App() {
 
     try {
       /**
-       * REQUIREMENT: Use this endpoint for both Ayah and Audio
-       * https://api.quran.com/api/v4/verses/random?translations=131&audio=7
+       * STEP 1: Fetch random ayah and audio info
+       * We use the random endpoint to get the verse_key, Arabic text, and audio.
        */
-      const response = await fetch(
-        `${API_BASE}/verses/random?translations=${TRANSLATION_ID}&audio=${RECITER_ID}&fields=text_uthmani`
+      const randomRes = await fetch(
+        `${API_BASE}/verses/random?fields=text_uthmani&audio=${RECITER_ID}`
       );
       
-      if (!response.ok) throw new Error('Could not connect to the Quran API.');
+      if (!randomRes.ok) throw new Error('Could not connect to the Quran API.');
       
-      const data = await response.json();
-      let verse = data.verse;
-
+      const randomData = await randomRes.json();
+      console.log('Step 1 (Random Ayah Data):', randomData);
+      
+      const verse = randomData.verse;
       if (!verse) throw new Error('Ayah data not found.');
 
-      // FALLBACK: If random endpoint didn't return translations or audio, fetch by key
-      // Sometimes the random endpoint returns a simplified object
-      if (!verse.translations?.length || !verse.audio?.url) {
-        const detailRes = await fetch(
-          `${API_BASE}/verses/by_key/${verse.verse_key}?translations=${TRANSLATION_ID}&audio=${RECITER_ID}&fields=text_uthmani`
+      const verseKey = verse.verse_key;
+      const [surahNum, ayahNum] = verseKey.split(':').map(Number);
+
+      /**
+       * STEP 2: Fetch translation using verse_key
+       * We try the dedicated translation endpoint first as requested.
+       */
+      let translationText = 'Translation not available';
+      
+      // Try primary API translation endpoint
+      const transRes = await fetch(
+        `${API_BASE}/quran/translations/${TRANSLATION_ID}?verse_key=${verseKey}`
+      );
+      
+      if (transRes.ok) {
+        const transData = await transRes.json();
+        console.log('Step 2 (Primary Translation Data):', transData);
+        if (transData.translations?.[0]?.text) {
+          translationText = transData.translations[0].text.replace(/<[^>]*>?/gm, '');
+        }
+      }
+
+      /**
+       * FALLBACK: If translation is still missing, try the alternative endpoint
+       */
+      if (translationText === 'Translation not available') {
+        console.log('Primary translation failed, trying fallback endpoint...');
+        const fallbackRes = await fetch(
+          `${API_BASE}/verses/by_key/${verseKey}?translations=${TRANSLATION_ID}`
         );
-        if (detailRes.ok) {
-          const detailData = await detailRes.json();
-          if (detailData.verse) {
-            verse = detailData.verse;
+        if (fallbackRes.ok) {
+          const fallbackData = await fallbackRes.json();
+          console.log('Fallback Translation Data:', fallbackData);
+          if (fallbackData.verse?.translations?.[0]?.text) {
+            translationText = fallbackData.verse.translations[0].text.replace(/<[^>]*>?/gm, '');
           }
         }
       }
 
-      const [surahNum, ayahNum] = verse.verse_key.split(':').map(Number);
-
-      // Fetch Surah Name and Meaning
+      // Fetch Surah Name for better UI
       const chapterRes = await fetch(`${API_BASE}/chapters/${surahNum}?language=en`);
       const chapterData = await chapterRes.json();
       const surahName = chapterData.chapter?.name_simple || `Surah ${surahNum}`;
       const surahMeaning = chapterData.chapter?.translated_name?.name;
 
       /**
-       * REQUIREMENT: Correct Audio URL Handling
-       * The API returns a relative path like "/audio/7/xxx.mp3".
-       * We MUST prepend "https://audio.qurancdn.com" to make it a full playable URL.
+       * REQUIREMENT: Fix Audio URL
+       * Prepend the CDN base to the relative path.
        */
       let audioUrl = undefined;
-      const audioPath = verse.audio?.url || verse.audio_file?.url;
-      
-      if (audioPath) {
-        // If it's already a full URL, use it; otherwise, prepend the CDN base
-        audioUrl = audioPath.startsWith('http') 
-          ? audioPath 
-          : `https://audio.qurancdn.com/${audioPath.startsWith('/') ? audioPath.slice(1) : audioPath}`;
+      if (verse.audio?.url) {
+        audioUrl = `https://audio.qurancdn.com/${verse.audio.url}`;
       }
-
-      /**
-       * REQUIREMENT: Safely access translation
-       * We try multiple paths to be extremely robust
-       */
-      const translation = verse.translations?.[0]?.text || verse.translation?.text;
-      const translationText = translation 
-        ? translation.replace(/<[^>]*>?/gm, '') 
-        : 'Translation not available';
 
       setAyah({
         id: verse.id,
-        verse_key: verse.verse_key,
+        verse_key: verseKey,
         text_uthmani: verse.text_uthmani || 'Arabic text not available',
         translation: translationText,
         surah_number: surahNum,
@@ -184,20 +194,31 @@ export default function App() {
     fetchRandomAyah();
   }, [fetchRandomAyah]);
 
-  // --- 3. AUDIO PLAYBACK ---
-  const toggleAudio = () => {
-    if (!ayah?.audio_url) {
+  // --- 3. AUDIO PLAYBACK (REFACTORED FOR MULTIPLE SOURCES) ---
+  const toggleAudio = (url?: string, key?: string) => {
+    const targetUrl = url || ayah?.audio_url;
+    const targetKey = key || ayah?.verse_key;
+
+    if (!targetUrl || !targetKey) {
       setAudioError('Audio not available');
       return;
+    }
+
+    // If clicking a different ayah while one is already playing/loading
+    if (audioRef.current && activeAudioKey !== targetKey) {
+      audioRef.current.pause();
+      audioRef.current = null;
+      setIsPlaying(false);
+      setActiveAudioKey(null);
     }
 
     if (!audioRef.current) {
       setAudioLoading(true);
       setAudioError(null);
+      setActiveAudioKey(targetKey);
       
       const audio = new Audio();
-      // Set source and load explicitly
-      audio.src = ayah.audio_url;
+      audio.src = targetUrl;
       audio.load();
       
       audioRef.current = audio;
@@ -208,21 +229,28 @@ export default function App() {
           console.error('Playback error:', err);
           setAudioError('Playback failed. Tap again.');
           setIsPlaying(false);
+          setActiveAudioKey(null);
         });
         setIsPlaying(true);
       };
 
       audio.onplay = () => setIsPlaying(true);
       audio.onpause = () => setIsPlaying(false);
-      audio.onended = () => setIsPlaying(false);
+      audio.onended = () => {
+        setIsPlaying(false);
+        setActiveAudioKey(null);
+        audioRef.current = null;
+      };
       
       audio.onerror = () => {
         setAudioLoading(false);
         setAudioError('Audio file could not be loaded');
         setIsPlaying(false);
+        setActiveAudioKey(null);
         audioRef.current = null;
       };
     } else {
+      // Toggle play/pause for the same ayah
       if (isPlaying) {
         audioRef.current.pause();
       } else {
@@ -320,7 +348,7 @@ export default function App() {
                       </div>
 
                       {/* REQUIREMENT: Arabic Text with Audio-Synced Highlighting */}
-                      <div className={`p-4 transition-all duration-500 ${isPlaying ? 'highlight-active' : ''}`}>
+                      <div className={`p-4 transition-all duration-500 ${isPlaying && activeAudioKey === ayah.verse_key ? 'highlight-active' : ''}`}>
                         <p className="arabic-text text-4xl md:text-5xl leading-[1.8] text-right text-slate-800">
                           {ayah.text_uthmani}
                         </p>
@@ -337,22 +365,22 @@ export default function App() {
                       <div className="flex flex-col gap-3 pt-4">
                         <div className="flex items-center gap-3">
                           <button
-                            onClick={toggleAudio}
-                            disabled={loading || audioLoading}
+                            onClick={() => toggleAudio()}
+                            disabled={loading || (audioLoading && activeAudioKey === ayah.verse_key)}
                             className={`flex-1 flex items-center justify-center py-4 rounded-2xl font-bold transition-all ${
                               !ayah.audio_url 
                                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                                 : 'bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95 shadow-md'
                             }`}
                           >
-                            {audioLoading ? (
+                            {audioLoading && activeAudioKey === ayah.verse_key ? (
                               <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                            ) : isPlaying ? (
+                            ) : isPlaying && activeAudioKey === ayah.verse_key ? (
                               <Pause className="w-5 h-5 mr-2 fill-white" />
                             ) : (
                               <Play className="w-5 h-5 mr-2 fill-white" />
                             )}
-                            {audioLoading ? 'Loading...' : isPlaying ? 'Pause' : 'Listen Ayah'}
+                            {audioLoading && activeAudioKey === ayah.verse_key ? 'Loading...' : isPlaying && activeAudioKey === ayah.verse_key ? 'Pause' : 'Listen Ayah'}
                           </button>
 
                           <button
@@ -403,25 +431,47 @@ export default function App() {
                   <p className="text-slate-400 font-medium">No bookmarks yet.</p>
                 </div>
               ) : (
-                <div className="grid gap-4">
-                  {bookmarks.map((b) => (
-                    <div key={b.verse_key} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative group">
-                      <div className="flex justify-between items-start mb-4">
-                        <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full">
-                          {b.surah_name} {b.surah_meaning && `(${b.surah_meaning})`} : {b.ayah_number}
-                        </span>
-                        <button 
-                          onClick={() => toggleBookmark(b)}
-                          className="text-slate-300 hover:text-red-500 transition-colors"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
+                  <div className="grid gap-4">
+                    {bookmarks.map((b) => (
+                      <div key={b.verse_key} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative group">
+                        <div className="flex justify-between items-start mb-4">
+                          <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full">
+                            {b.surah_name} {b.surah_meaning && `(${b.surah_meaning})`} : {b.ayah_number}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            {b.audio_url && (
+                              <button
+                                onClick={() => toggleAudio(b.audio_url, b.verse_key)}
+                                className={`p-2 rounded-full transition-all ${
+                                  activeAudioKey === b.verse_key 
+                                    ? 'bg-emerald-600 text-white' 
+                                    : 'bg-slate-50 text-slate-400 hover:text-emerald-600'
+                                }`}
+                              >
+                                {audioLoading && activeAudioKey === b.verse_key ? (
+                                  <RefreshCw className="w-4 h-4 animate-spin" />
+                                ) : isPlaying && activeAudioKey === b.verse_key ? (
+                                  <Pause className="w-4 h-4 fill-current" />
+                                ) : (
+                                  <Play className="w-4 h-4 fill-current" />
+                                )}
+                              </button>
+                            )}
+                            <button 
+                              onClick={() => toggleBookmark(b)}
+                              className="p-2 text-slate-300 hover:text-red-500 transition-colors"
+                            >
+                              <Trash2 className="w-5 h-5" />
+                            </button>
+                          </div>
+                        </div>
+                        <div className={`transition-all duration-500 rounded-xl ${isPlaying && activeAudioKey === b.verse_key ? 'highlight-active p-2' : ''}`}>
+                          <p className="arabic-text text-2xl text-right mb-4 text-slate-800 leading-relaxed">{b.text_uthmani}</p>
+                        </div>
+                        <p className="text-sm text-slate-600 italic">"{b.translation}"</p>
                       </div>
-                      <p className="arabic-text text-2xl text-right mb-4 text-slate-800 leading-relaxed">{b.text_uthmani}</p>
-                      <p className="text-sm text-slate-600 italic">"{b.translation}"</p>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
               )}
             </motion.div>
           )}
