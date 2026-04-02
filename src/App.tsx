@@ -35,7 +35,8 @@ import {
   Send,
   User,
   Bot,
-  Loader2
+  Loader2,
+  MoonStar
 } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import Markdown from 'react-markdown';
@@ -68,6 +69,8 @@ export default function App() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [prayerTimes, setPrayerTimes] = useState<Record<string, string> | null>(null);
   const [prayerStatus, setPrayerStatus] = useState<{ current: string; next: string; remaining: string } | null>(null);
+  const [prayerLoading, setPrayerLoading] = useState(false);
+  const [prayerError, setPrayerError] = useState<string | null>(null);
   const [ayah, setAyah] = useState<Ayah | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -124,63 +127,89 @@ export default function App() {
 
     // Prayer Times Logic
     if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(async (position) => {
-        const { latitude, longitude } = position.coords;
-        
-        const fetchPrayerTimes = async () => {
-          try {
-            // Primary API: Aladhan
-            const response = await fetch(`https://api.aladhan.com/v1/timings?latitude=${latitude}&longitude=${longitude}&method=2`, {
-              mode: 'cors',
-              cache: 'no-cache'
-            });
-            if (!response.ok) throw new Error('Aladhan API failed');
-            const data = await response.json();
-            if (data.code === 200) {
-              setPrayerTimes(data.data.timings);
-              updatePrayerStatus(new Date(), data.data.timings);
-              return true;
-            }
-          } catch (err) {
-            console.warn("Aladhan API failed, trying fallback...", err);
-            try {
-              // Fallback API: Pray.zone
-              const response = await fetch(`https://api.pray.zone/v2/times/today.json?latitude=${latitude}&longitude=${longitude}`);
-              if (!response.ok) throw new Error('Pray.zone API failed');
-              const data = await response.json();
-              if (data.status === "OK") {
-                const timings = {
-                  Fajr: data.results.datetime[0].times.Fajr,
-                  Dhuhr: data.results.datetime[0].times.Dhuhr,
-                  Asr: data.results.datetime[0].times.Asr,
-                  Maghrib: data.results.datetime[0].times.Maghrib,
-                  Isha: data.results.datetime[0].times.Isha
-                };
-                setPrayerTimes(timings);
-                updatePrayerStatus(new Date(), timings);
-                return true;
-              }
-            } catch (fallbackErr) {
-              console.error("All prayer time APIs failed:", fallbackErr);
-              setError("Could not load prayer times. Please check your connection.");
-            }
-          }
-          return false;
-        };
-
-        fetchPrayerTimes();
-      }, (geoErr) => {
-        console.error("Geolocation error:", geoErr);
-        setError("Location access denied. Using default prayer times (Mecca).");
-        // Fallback to a default location if geolocation is denied
-        const meccaTimings = { Fajr: "05:00", Dhuhr: "12:20", Asr: "15:45", Maghrib: "18:35", Isha: "20:05" };
-        setPrayerTimes(meccaTimings);
-        updatePrayerStatus(new Date(), meccaTimings);
-      });
+      loadPrayerTimes();
     }
 
     return () => clearInterval(timer);
   }, [prayerTimes]);
+
+  const loadPrayerTimes = () => {
+    setPrayerLoading(true);
+    setPrayerError(null);
+    
+    navigator.geolocation.getCurrentPosition(async (position) => {
+      const { latitude, longitude } = position.coords;
+      
+      const fetchPrayerTimes = async () => {
+        // Attempt 1: Aladhan (Standard)
+        try {
+          const response = await fetch(`https://api.aladhan.com/v1/timings?latitude=${latitude}&longitude=${longitude}&method=2`);
+          if (response.ok) {
+            const data = await response.json();
+            if (data.code === 200) {
+              setPrayerTimes(data.data.timings);
+              updatePrayerStatus(new Date(), data.data.timings);
+              setPrayerLoading(false);
+              return true;
+            }
+          }
+        } catch (e) { console.warn("Aladhan failed", e); }
+
+        // Attempt 2: Aladhan (Alternative Endpoint)
+        try {
+          const response = await fetch(`https://api.aladhan.com/v1/timingsByAddress?address=${latitude},${longitude}&method=2`);
+          if (response.ok) {
+            const data = await response.json();
+            if (data.code === 200) {
+              setPrayerTimes(data.data.timings);
+              updatePrayerStatus(new Date(), data.data.timings);
+              setPrayerLoading(false);
+              return true;
+            }
+          }
+        } catch (e) { console.warn("Aladhan Alt failed", e); }
+
+        // Attempt 3: Pray.zone
+        try {
+          const response = await fetch(`https://api.pray.zone/v2/times/today.json?latitude=${latitude}&longitude=${longitude}`);
+          if (response.ok) {
+            const data = await response.json();
+            if (data.status === "OK") {
+              const timings = {
+                Fajr: data.results.datetime[0].times.Fajr,
+                Dhuhr: data.results.datetime[0].times.Dhuhr,
+                Asr: data.results.datetime[0].times.Asr,
+                Maghrib: data.results.datetime[0].times.Maghrib,
+                Isha: data.results.datetime[0].times.Isha
+              };
+              setPrayerTimes(timings);
+              updatePrayerStatus(new Date(), timings);
+              setPrayerLoading(false);
+              return true;
+            }
+          }
+        } catch (e) { console.warn("Pray.zone failed", e); }
+
+        // All failed
+        setPrayerError("Network error: Could not connect to prayer time servers. Please check your internet or ad-blocker.");
+        setPrayerLoading(false);
+        // Fallback to default
+        const meccaTimings = { Fajr: "05:00", Dhuhr: "12:20", Asr: "15:45", Maghrib: "18:35", Isha: "20:05" };
+        setPrayerTimes(meccaTimings);
+        updatePrayerStatus(new Date(), meccaTimings);
+        return false;
+      };
+
+      fetchPrayerTimes();
+    }, (geoErr) => {
+      console.error("Geolocation error:", geoErr);
+      setPrayerError("Location access denied. Using default prayer times (Mecca).");
+      setPrayerLoading(false);
+      const meccaTimings = { Fajr: "05:00", Dhuhr: "12:20", Asr: "15:45", Maghrib: "18:35", Isha: "20:05" };
+      setPrayerTimes(meccaTimings);
+      updatePrayerStatus(new Date(), meccaTimings);
+    });
+  };
 
   const updatePrayerStatus = (now: Date, timings: Record<string, string>) => {
     const prayers = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
@@ -494,13 +523,18 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
       {/* Header */}
       <header className="bg-emerald-600 text-white p-6 shadow-md sticky top-0 z-30">
         <div className="max-w-2xl mx-auto flex justify-between items-center">
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">
-              {view === 'chat' ? 'Quran Assistant' : 'Pocket Quran'}
-            </h1>
-            <p className="text-emerald-100 text-xs">
-              {view === 'chat' ? 'Ask me anything about the Quran' : 'Your daily spiritual companion'}
-            </p>
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-emerald-700/50 rounded-xl border border-emerald-500/30 shadow-inner">
+              <MoonStar className="w-6 h-6 text-amber-300 fill-amber-300" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold tracking-tight">
+                {view === 'chat' ? 'Quran Assistant' : 'Pocket Quran'}
+              </h1>
+              <p className="text-emerald-100 text-xs">
+                {view === 'chat' ? 'Ask me anything about the Quran' : 'Your daily spiritual companion'}
+              </p>
+            </div>
           </div>
           <div className="flex items-center bg-emerald-700 px-3 py-1.5 rounded-full border border-emerald-500">
             <Flame className="w-4 h-4 text-amber-400 mr-2 fill-amber-400" />
@@ -590,7 +624,10 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
               {/* Prayer Times Card */}
               <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden p-6">
                 <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Prayer Times</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Prayer Times</h3>
+                    {prayerLoading && <Loader2 className="w-3 h-3 text-emerald-600 animate-spin" />}
+                  </div>
                   {prayerStatus && (
                     <div className="bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">
                       <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">
@@ -599,6 +636,19 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
                     </div>
                   )}
                 </div>
+
+                {prayerError && (
+                  <div className="mb-4 p-3 bg-amber-50 border border-amber-100 rounded-2xl flex items-center justify-between">
+                    <p className="text-[10px] text-amber-800 font-medium leading-tight max-w-[70%]">{prayerError}</p>
+                    <button 
+                      onClick={loadPrayerTimes}
+                      className="text-[10px] font-bold text-emerald-600 hover:text-emerald-700 underline"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-5 gap-2">
                   {[
                     { name: 'Fajr', key: 'Fajr', icon: Sunrise, color: 'text-amber-500' },
