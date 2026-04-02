@@ -15,10 +15,33 @@ body {
   direction: rtl;
 }
 
-.highlight-active {
-  @apply bg-emerald-50/50 rounded-2xl shadow-[0_0_20px_rgba(16,185,129,0.2)];
-  animation: pulse-glow 2s infinite ease-in-out;
-  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+.markdown-body p {
+  @apply mb-2 last:mb-0;
+}
+
+.markdown-body strong {
+  @apply font-bold;
+}
+
+.markdown-body em {
+  @apply italic;
+}
+
+.markdown-body ul {
+  @apply list-disc ml-4 mb-2;
+}
+
+.markdown-body ol {
+  @apply list-decimal ml-4 mb-2;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 @keyframes pulse-glow {

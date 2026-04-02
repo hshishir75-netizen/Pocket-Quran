@@ -30,8 +30,15 @@ import {
   Sun,
   SunDim,
   Sunset,
-  Moon
+  Moon,
+  MessageSquare,
+  Send,
+  User,
+  Bot,
+  Loader2
 } from 'lucide-react';
+import { GoogleGenAI } from "@google/genai";
+import Markdown from 'react-markdown';
 
 // Types
 interface Ayah {
@@ -57,7 +64,7 @@ const TRANSLATION_ID = 131; // Clear Quran (English)
 const RECITER_ID = 7; // Mishary Rashid Alafasy
 
 export default function App() {
-  const [view, setView] = useState<'dashboard' | 'daily-ayah' | 'bookmarks'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'daily-ayah' | 'bookmarks' | 'chat'>('dashboard');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [prayerTimes, setPrayerTimes] = useState<Record<string, string> | null>(null);
   const [prayerStatus, setPrayerStatus] = useState<{ current: string; next: string; remaining: string } | null>(null);
@@ -71,6 +78,14 @@ export default function App() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [streak, setStreak] = useState(0);
   const [bookmarks, setBookmarks] = useState<BookmarkItem[]>([]);
+
+  // Chat State
+  const [messages, setMessages] = useState<{ role: 'user' | 'bot'; content: string }[]>([
+    { role: 'bot', content: "Assalamu Alaikum! I am your Pocket Quran assistant. How can I help you explore the Holy Quran today?" }
+  ]);
+  const [input, setInput] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   // --- 1. INITIALIZATION (Streak & Bookmarks) ---
   useEffect(() => {
@@ -110,17 +125,57 @@ export default function App() {
     // Prayer Times Logic
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(async (position) => {
-        try {
-          const { latitude, longitude } = position.coords;
-          const response = await fetch(`https://api.aladhan.com/v1/timings?latitude=${latitude}&longitude=${longitude}&method=2`);
-          const data = await response.json();
-          if (data.code === 200) {
-            setPrayerTimes(data.data.timings);
-            updatePrayerStatus(new Date(), data.data.timings);
+        const { latitude, longitude } = position.coords;
+        
+        const fetchPrayerTimes = async () => {
+          try {
+            // Primary API: Aladhan
+            const response = await fetch(`https://api.aladhan.com/v1/timings?latitude=${latitude}&longitude=${longitude}&method=2`, {
+              mode: 'cors',
+              cache: 'no-cache'
+            });
+            if (!response.ok) throw new Error('Aladhan API failed');
+            const data = await response.json();
+            if (data.code === 200) {
+              setPrayerTimes(data.data.timings);
+              updatePrayerStatus(new Date(), data.data.timings);
+              return true;
+            }
+          } catch (err) {
+            console.warn("Aladhan API failed, trying fallback...", err);
+            try {
+              // Fallback API: Pray.zone
+              const response = await fetch(`https://api.pray.zone/v2/times/today.json?latitude=${latitude}&longitude=${longitude}`);
+              if (!response.ok) throw new Error('Pray.zone API failed');
+              const data = await response.json();
+              if (data.status === "OK") {
+                const timings = {
+                  Fajr: data.results.datetime[0].times.Fajr,
+                  Dhuhr: data.results.datetime[0].times.Dhuhr,
+                  Asr: data.results.datetime[0].times.Asr,
+                  Maghrib: data.results.datetime[0].times.Maghrib,
+                  Isha: data.results.datetime[0].times.Isha
+                };
+                setPrayerTimes(timings);
+                updatePrayerStatus(new Date(), timings);
+                return true;
+              }
+            } catch (fallbackErr) {
+              console.error("All prayer time APIs failed:", fallbackErr);
+              setError("Could not load prayer times. Please check your connection.");
+            }
           }
-        } catch (err) {
-          console.error("Error fetching prayer times:", err);
-        }
+          return false;
+        };
+
+        fetchPrayerTimes();
+      }, (geoErr) => {
+        console.error("Geolocation error:", geoErr);
+        setError("Location access denied. Using default prayer times (Mecca).");
+        // Fallback to a default location if geolocation is denied
+        const meccaTimings = { Fajr: "05:00", Dhuhr: "12:20", Asr: "15:45", Maghrib: "18:35", Isha: "20:05" };
+        setPrayerTimes(meccaTimings);
+        updatePrayerStatus(new Date(), meccaTimings);
       });
     }
 
@@ -172,6 +227,87 @@ export default function App() {
       next: nextName,
       remaining: `${h}h ${m}m ${s}s`
     });
+  };
+
+  // --- CHAT LOGIC ---
+  const scrollToBottom = () => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    if (view === 'chat') {
+      scrollToBottom();
+    }
+  }, [messages, view]);
+
+  const handleSendMessage = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!input.trim() || isTyping) return;
+
+    const userMessage = input.trim();
+    setInput('');
+    setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
+    setIsTyping(true);
+
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const model = "gemini-3.1-pro-preview";
+      
+      const systemInstruction = `You are a knowledgeable and respectful Islamic AI assistant embedded in a Quran application called Pocket Quran.
+Your primary role is to help users engage deeply with the Holy Quran — reciting verses, explaining meanings, providing context, and answering questions about Islam with accuracy and care.
+
+CORE CAPABILITIES:
+1. VERSE RECITATION — When a user asks for a verse, always provide:
+   - The Arabic text (e.g., بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ)
+   - The transliteration (romanized pronunciation)
+   - The English translation
+   - Surah name, number, and ayah number
+
+2. VERSE SEARCH — If a user describes a topic or feeling (e.g., "a verse about patience" or "ayah about forgiveness"), suggest 2–3 relevant verses with full details as above.
+
+3. EXPLANATION & TAFSIR — Provide simple, clear explanations of verses when asked. Draw from classical tafsir understanding (Ibn Kathir, Al-Jalalayn) but present it in plain, modern language.
+
+4. ISLAMIC Q&A — Answer general questions about Islam, the Prophet (ﷺ), Islamic history, pillars of Islam, and daily practices respectfully and accurately.
+
+5. DU'A & SUPPLICATION — Share relevant du'as (supplications) with Arabic, transliteration, and meaning when asked.
+
+BEHAVIOR RULES:
+- Always be respectful, humble, and spiritually uplifting in tone
+- Say "Peace be upon him" (ﷺ) after mentioning the Prophet Muhammad
+- If you are unsure about a ruling or hadith, say so clearly and suggest consulting a scholar
+- Never invent or fabricate verses — if unsure of an exact reference, say so
+- Support both English and Arabic responses; if the user writes in Arabic, respond in Arabic
+- Keep responses concise unless the user asks for more detail
+
+RESPONSE FORMAT for verses:
+📖 Surah [Name] ([Number]:[Ayah])
+Arabic: [Arabic text]
+Transliteration: [Roman text]
+Translation: "[English meaning]"
+
+Always start with a warm Islamic greeting if it's the beginning of a conversation.`;
+
+      const chat = ai.chats.create({
+        model,
+        config: {
+          systemInstruction,
+        },
+        history: messages.map(m => ({
+          role: m.role === 'user' ? 'user' : 'model',
+          parts: [{ text: m.content }]
+        }))
+      });
+
+      const result = await chat.sendMessage({ message: userMessage });
+      const botResponse = result.text || "I apologize, I am unable to process that request right now.";
+      
+      setMessages(prev => [...prev, { role: 'bot', content: botResponse }]);
+    } catch (err) {
+      console.error("Chat error:", err);
+      setMessages(prev => [...prev, { role: 'bot', content: "I'm sorry, I encountered an error. Please try again later." }]);
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   // --- 2. API USAGE: FETCH RANDOM AYAH (DETECTION-BASED 2-STEP APPROACH) ---
@@ -359,8 +495,12 @@ export default function App() {
       <header className="bg-emerald-600 text-white p-6 shadow-md sticky top-0 z-30">
         <div className="max-w-2xl mx-auto flex justify-between items-center">
           <div>
-            <h1 className="text-xl font-bold tracking-tight">Pocket Quran</h1>
-            <p className="text-emerald-100 text-xs">Your daily spiritual companion</p>
+            <h1 className="text-xl font-bold tracking-tight">
+              {view === 'chat' ? 'Quran Assistant' : 'Pocket Quran'}
+            </h1>
+            <p className="text-emerald-100 text-xs">
+              {view === 'chat' ? 'Ask me anything about the Quran' : 'Your daily spiritual companion'}
+            </p>
           </div>
           <div className="flex items-center bg-emerald-700 px-3 py-1.5 rounded-full border border-emerald-500">
             <Flame className="w-4 h-4 text-amber-400 mr-2 fill-amber-400" />
@@ -514,6 +654,57 @@ export default function App() {
                   ))}
                 </div>
               </div>
+            </motion.div>
+          ) : view === 'chat' ? (
+            <motion.div
+              key="chat"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="flex flex-col h-[calc(100vh-200px)]"
+            >
+              <div className="flex-1 overflow-y-auto space-y-4 pb-4 px-2 scrollbar-hide">
+                {messages.map((m, i) => (
+                  <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`flex max-w-[85%] ${m.role === 'user' ? 'flex-row-reverse' : 'flex-row'} items-end gap-2`}>
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${m.role === 'user' ? 'bg-emerald-100' : 'bg-emerald-600'}`}>
+                        {m.role === 'user' ? <User className="w-4 h-4 text-emerald-600" /> : <Bot className="w-4 h-4 text-white" />}
+                      </div>
+                      <div className={`p-4 rounded-2xl shadow-sm ${m.role === 'user' ? 'bg-emerald-600 text-white rounded-br-none' : 'bg-white border border-slate-100 rounded-bl-none'}`}>
+                        <div className={`markdown-body text-sm leading-relaxed ${m.role === 'user' ? 'text-white' : 'text-slate-800'}`}>
+                          <Markdown>{m.content}</Markdown>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {isTyping && (
+                  <div className="flex justify-start">
+                    <div className="flex items-center gap-2 bg-white border border-slate-100 p-4 rounded-2xl rounded-bl-none shadow-sm">
+                      <Loader2 className="w-4 h-4 text-emerald-600 animate-spin" />
+                      <span className="text-xs text-slate-400 font-medium">Assistant is thinking...</span>
+                    </div>
+                  </div>
+                )}
+                <div ref={chatEndRef} />
+              </div>
+
+              <form onSubmit={handleSendMessage} className="mt-4 relative">
+                <input
+                  type="text"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Ask about a verse, hadith, or Islam..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-4 pl-6 pr-14 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all shadow-inner"
+                />
+                <button
+                  type="submit"
+                  disabled={!input.trim() || isTyping}
+                  className="absolute right-2 top-2 w-10 h-10 bg-emerald-600 text-white rounded-xl flex items-center justify-center hover:bg-emerald-700 disabled:opacity-50 disabled:hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-600/20"
+                >
+                  <Send className="w-5 h-5" />
+                </button>
+              </form>
             </motion.div>
           ) : view === 'daily-ayah' ? (
             <motion.div
@@ -761,6 +952,13 @@ export default function App() {
           >
             <Home className="w-6 h-6" />
             <span className="text-[10px] font-bold uppercase tracking-widest">Home</span>
+          </button>
+          <button 
+            onClick={() => setView('chat')} 
+            className={`flex flex-col items-center space-y-1 transition-colors ${view === 'chat' ? 'text-emerald-600' : 'text-slate-400'}`}
+          >
+            <MessageSquare className="w-6 h-6" />
+            <span className="text-[10px] font-bold uppercase tracking-widest">Chat</span>
           </button>
           <button 
             onClick={() => setView('daily-ayah')} 
