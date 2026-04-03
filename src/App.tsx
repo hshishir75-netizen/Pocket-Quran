@@ -40,7 +40,10 @@ import {
   Send,
   User,
   Bot,
-  Loader2
+  Loader2,
+  ChevronLeft,
+  Activity,
+  Check
 } from 'lucide-react';
 import { GoogleGenAI, Modality } from "@google/genai";
 import Markdown from 'react-markdown';
@@ -489,6 +492,7 @@ const RECITER_ID = 7; // Mishary Rashid Alafasy
 
 export default function App() {
   const [view, setView] = useState<'dashboard' | 'daily-amal' | 'bookmarks' | 'chat'>('dashboard');
+  const [dashboardTab, setDashboardTab] = useState<'home' | 'bookmarks' | 'tracker'>('home');
   const [amalTab, setAmalTab] = useState<'surah' | 'hadith' | 'dua'>('surah');
   const [selectedDuaCategory, setSelectedDuaCategory] = useState<string>(DUA_DATA[0].category);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -1762,88 +1766,274 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
             </motion.div>
           ) : (
             <motion.div
-              key="bookmarks"
+              key="dashboard-view"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="space-y-4"
+              className="space-y-6"
             >
-              <h2 className="text-2xl font-bold text-slate-800 mb-6">Saved Ayahs</h2>
-              {bookmarks.length === 0 ? (
-                <div className="text-center py-20 bg-slate-50 rounded-3xl border border-dashed border-slate-300">
-                  <Bookmark className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-                  <p className="text-slate-400 font-medium">No bookmarks yet.</p>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {dashboardTab !== 'home' && (
+                    <button 
+                      onClick={() => setDashboardTab('home')}
+                      className="p-2 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 transition-colors"
+                    >
+                      <ChevronLeft className="w-5 h-5" />
+                    </button>
+                  )}
+                  <h2 className="text-2xl font-bold text-slate-800">
+                    {dashboardTab === 'home' ? 'Dashboard' : 
+                     dashboardTab === 'bookmarks' ? 'Bookmarks' : 'Deen Tracker'}
+                  </h2>
                 </div>
-              ) : (
-                  <div className="grid gap-4">
-                    {bookmarks.map((b) => (
-                      <div key={b.verse_key} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative group">
-                        <div className="flex justify-between items-start mb-4">
-                          <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full">
-                            {b.surah_name} {b.surah_meaning && `(${b.surah_meaning})`} : {b.ayah_number}
-                          </span>
-                          <div className="flex items-center gap-2">
-                            {b.audio_url && (
-                              <button
-                                onClick={() => toggleAudio(b.audio_url, b.verse_key)}
-                                className={`p-2 rounded-full transition-all ${
-                                  activeAudioKey === b.verse_key 
-                                    ? 'bg-emerald-600 text-white' 
-                                    : 'bg-slate-50 text-slate-400 hover:text-emerald-600'
-                                }`}
-                              >
-                                {audioLoading && activeAudioKey === b.verse_key ? (
-                                  <RefreshCw className="w-4 h-4 animate-spin" />
-                                ) : isPlaying && activeAudioKey === b.verse_key ? (
-                                  <Pause className="w-4 h-4 fill-current" />
-                                ) : (
-                                  <Play className="w-4 h-4 fill-current" />
+              </div>
+
+              {dashboardTab === 'home' ? (
+                <div className="grid gap-4">
+                  {/* Dashboard Options */}
+                  <button
+                    onClick={() => setDashboardTab('bookmarks')}
+                    className="group relative overflow-hidden bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:border-emerald-200 hover:shadow-md transition-all text-left"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="p-4 bg-emerald-50 text-emerald-600 rounded-2xl group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+                        <Bookmark className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-slate-800">Bookmarks</h3>
+                        <p className="text-xs text-slate-500">Access your saved Ayahs and verses</p>
+                      </div>
+                      <ChevronRight className="w-5 h-5 ml-auto text-slate-300 group-hover:text-emerald-600 transition-colors" />
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => setDashboardTab('tracker')}
+                    className="group relative overflow-hidden bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:border-emerald-200 hover:shadow-md transition-all text-left"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="p-4 bg-blue-50 text-blue-600 rounded-2xl group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                        <Activity className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-slate-800">Deen Tracker</h3>
+                        <p className="text-xs text-slate-500">Track your daily prayers and progress</p>
+                      </div>
+                      <ChevronRight className="w-5 h-5 ml-auto text-slate-300 group-hover:text-blue-600 transition-colors" />
+                    </div>
+                  </button>
+
+                  {/* Quick Stats Summary */}
+                  <div className="mt-4 grid grid-cols-2 gap-4">
+                    <div className="bg-emerald-600 p-5 rounded-3xl text-white shadow-lg shadow-emerald-600/20">
+                      <span className="text-[10px] font-bold uppercase tracking-widest opacity-80">Current Streak</span>
+                      <div className="mt-1 flex items-baseline gap-1">
+                        <span className="text-3xl font-black">{streak}</span>
+                        <span className="text-[10px] font-bold uppercase">Days</span>
+                      </div>
+                    </div>
+                    <div className="bg-slate-800 p-5 rounded-3xl text-white shadow-lg shadow-slate-800/20">
+                      <span className="text-[10px] font-bold uppercase tracking-widest opacity-80">Saved Ayahs</span>
+                      <div className="mt-1 flex items-baseline gap-1">
+                        <span className="text-3xl font-black">{bookmarks.length}</span>
+                        <span className="text-[10px] font-bold uppercase">Verses</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : dashboardTab === 'bookmarks' ? (
+                <div className="space-y-4">
+                  {bookmarks.length === 0 ? (
+                    <div className="text-center py-20 bg-slate-50 rounded-3xl border border-dashed border-slate-300">
+                      <Bookmark className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                      <p className="text-slate-400 font-medium">No bookmarks yet.</p>
+                      <button 
+                        onClick={() => setView('dashboard')}
+                        className="mt-4 text-emerald-600 font-bold text-sm hover:underline"
+                      >
+                        Explore Quran
+                      </button>
+                    </div>
+                  ) : (
+                      <div className="grid gap-4">
+                        {bookmarks.map((b) => (
+                          <div key={b.verse_key} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative group">
+                            <div className="flex justify-between items-start mb-4">
+                              <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full">
+                                {b.surah_name} {b.surah_meaning && `(${b.surah_meaning})`} : {b.ayah_number}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                {b.audio_url && (
+                                  <button
+                                    onClick={() => toggleAudio(b.audio_url, b.verse_key)}
+                                    className={`p-2 rounded-full transition-all ${
+                                      activeAudioKey === b.verse_key 
+                                        ? 'bg-emerald-600 text-white' 
+                                        : 'bg-slate-50 text-slate-400 hover:text-emerald-600'
+                                    }`}
+                                  >
+                                    {audioLoading && activeAudioKey === b.verse_key ? (
+                                      <RefreshCw className="w-4 h-4 animate-spin" />
+                                    ) : isPlaying && activeAudioKey === b.verse_key ? (
+                                      <Pause className="w-4 h-4 fill-current" />
+                                    ) : (
+                                      <Play className="w-4 h-4 fill-current" />
+                                    )}
+                                  </button>
                                 )}
-                              </button>
-                            )}
-                            <button 
-                              onClick={() => toggleBookmark(b)}
-                              className="p-2 text-slate-300 hover:text-red-500 transition-colors"
-                            >
-                              <Trash2 className="w-5 h-5" />
-                            </button>
-                          </div>
-                        </div>
-                        <div className={`transition-all duration-500 rounded-xl ${isPlaying && activeAudioKey === b.verse_key ? 'highlight-active p-2' : ''}`}>
-                          <p className="arabic-text text-2xl text-right mb-4 text-slate-800 leading-relaxed">{b.text_uthmani}</p>
-                        </div>
-                        
-                        <div className="mt-4 pt-4 border-t border-slate-50">
-                          <span className="text-slate-400 text-[9px] font-bold uppercase tracking-widest mb-1 block">Reference</span>
-                          <div className="flex flex-col gap-1">
-                            <p className="text-slate-600 text-xs font-medium">
-                              {b.surah_name} — {b.surah_number}:{b.ayah_number}
-                            </p>
-                            <div className="flex flex-col gap-1.5">
-                              <a 
-                                href={b.external_link}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center text-emerald-600 hover:text-emerald-700 font-bold text-[10px] transition-colors group w-fit"
-                              >
-                                <ChevronRight className="w-3 h-3 mr-0.5 group-hover:translate-x-0.5 transition-transform" />
-                                View on Quran.com
-                              </a>
-                              <a 
-                                href={b.surah_link}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center text-slate-400 hover:text-emerald-600 font-medium text-[10px] transition-colors group w-fit"
-                              >
-                                <BookOpenText className="w-3 h-3 mr-1 group-hover:translate-x-0.5 transition-transform" />
-                                Read Full Surah
-                              </a>
+                                <button 
+                                  onClick={() => toggleBookmark(b)}
+                                  className="p-2 text-slate-300 hover:text-red-500 transition-colors"
+                                >
+                                  <Trash2 className="w-5 h-5" />
+                                </button>
+                              </div>
+                            </div>
+                            <div className={`transition-all duration-500 rounded-xl ${isPlaying && activeAudioKey === b.verse_key ? 'highlight-active p-2' : ''}`}>
+                              <p className="arabic-text text-2xl text-right mb-4 text-slate-800 leading-relaxed">{b.text_uthmani}</p>
+                            </div>
+                            
+                            <div className="mt-4 pt-4 border-t border-slate-50">
+                              <span className="text-slate-400 text-[9px] font-bold uppercase tracking-widest mb-1 block">Reference</span>
+                              <div className="flex flex-col gap-1">
+                                <p className="text-slate-600 text-xs font-medium">
+                                  {b.surah_name} — {b.surah_number}:{b.ayah_number}
+                                </p>
+                                <div className="flex flex-col gap-1.5">
+                                  <a 
+                                    href={b.external_link}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center text-emerald-600 hover:text-emerald-700 font-bold text-[10px] transition-colors group w-fit"
+                                  >
+                                    <ChevronRight className="w-3 h-3 mr-0.5 group-hover:translate-x-0.5 transition-transform" />
+                                    View on Quran.com
+                                  </a>
+                                  <a 
+                                    href={b.surah_link}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center text-slate-400 hover:text-emerald-600 font-medium text-[10px] transition-colors group w-fit"
+                                  >
+                                    <BookOpenText className="w-3 h-3 mr-1 group-hover:translate-x-0.5 transition-transform" />
+                                    Read Full Surah
+                                  </a>
+                                </div>
+                              </div>
                             </div>
                           </div>
-                        </div>
+                        ))}
                       </div>
-                    ))}
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-6 pb-20">
+                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                    <div className="flex items-center justify-between mb-6">
+                      <h3 className="font-bold text-slate-800">Daily Prayer Tracker</h3>
+                      <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg uppercase tracking-wider">
+                        {currentTime.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'short' })}
+                      </span>
+                    </div>
+                    
+                    <div className="space-y-3">
+                      {['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'].map((prayer) => {
+                        const isDone = localStorage.getItem(`prayer_${prayer}_${new Date().toDateString()}`) === 'true';
+                        return (
+                          <button
+                            key={prayer}
+                            onClick={() => {
+                              const key = `prayer_${prayer}_${new Date().toDateString()}`;
+                              const current = localStorage.getItem(key) === 'true';
+                              localStorage.setItem(key, (!current).toString());
+                              // Force re-render
+                              setDashboardTab('tracker');
+                            }}
+                            className={`w-full flex items-center justify-between p-4 rounded-2xl border transition-all ${
+                              isDone 
+                                ? 'bg-emerald-50 border-emerald-200 text-emerald-700' 
+                                : 'bg-white border-slate-100 text-slate-600 hover:border-emerald-100'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+                                isDone ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-400'
+                              }`}>
+                                {isDone ? <Check className="w-4 h-4" /> : <div className="w-2 h-2 rounded-full bg-slate-300" />}
+                              </div>
+                              <span className="font-bold text-sm">{prayer}</span>
+                            </div>
+                            {prayerTimes && (
+                              <span className="text-[10px] font-medium text-slate-400">{prayerTimes[prayer]}</span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
+
+                  {/* Good Deeds Section */}
+                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                    <div className="flex items-center justify-between mb-6">
+                      <h3 className="font-bold text-slate-800">Good Deeds</h3>
+                      <Sparkles className="w-5 h-5 text-amber-500" />
+                    </div>
+                    <div className="grid grid-cols-1 gap-3">
+                      {[
+                        { id: 'charity', label: 'Gave Charity', icon: Heart },
+                        { id: 'parents', label: 'Helped Parents', icon: User },
+                        { id: 'dhikr', label: 'Morning/Evening Dhikr', icon: Sparkles },
+                        { id: 'quran', label: 'Read Quran', icon: BookOpenText },
+                      ].map((deed) => {
+                        const isDone = localStorage.getItem(`deed_${deed.id}_${new Date().toDateString()}`) === 'true';
+                        return (
+                          <button
+                            key={deed.id}
+                            onClick={() => {
+                              const key = `deed_${deed.id}_${new Date().toDateString()}`;
+                              const current = localStorage.getItem(key) === 'true';
+                              localStorage.setItem(key, (!current).toString());
+                              setDashboardTab('tracker');
+                            }}
+                            className={`flex items-center gap-3 p-4 rounded-2xl border transition-all ${
+                              isDone 
+                                ? 'bg-amber-50 border-amber-200 text-amber-700' 
+                                : 'bg-white border-slate-100 text-slate-600 hover:border-amber-100'
+                            }`}
+                          >
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+                              isDone ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-400'
+                            }`}>
+                              <deed.icon className="w-4 h-4" />
+                            </div>
+                            <span className="font-bold text-sm">{deed.label}</span>
+                            {isDone && <Check className="w-4 h-4 ml-auto" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="bg-emerald-600 p-6 rounded-3xl text-white shadow-lg shadow-emerald-600/20">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="p-2 bg-white/20 rounded-xl">
+                        <Activity className="w-5 h-5" />
+                      </div>
+                      <h3 className="font-bold">Spiritual Progress</h3>
+                    </div>
+                    <p className="text-emerald-50 text-xs leading-relaxed mb-4">
+                      Consistency is key to spiritual growth. Keep tracking your daily prayers and good deeds to build a lasting habit.
+                    </p>
+                    <div className="flex items-center justify-between bg-white/10 p-3 rounded-2xl">
+                      <span className="text-[10px] font-bold uppercase tracking-widest">Current Streak</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xl font-black">{streak}</span>
+                        <span className="text-[10px] font-bold uppercase tracking-widest">Days</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               )}
             </motion.div>
           )}
@@ -1879,7 +2069,7 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
             className={`flex flex-col items-center space-y-1 transition-colors ${view === 'bookmarks' ? 'text-emerald-600' : 'text-slate-400'}`}
           >
             <Bookmark className="w-6 h-6" />
-            <span className="text-[10px] font-bold uppercase tracking-widest">Saved</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest">Dashboard</span>
           </button>
         </div>
       </nav>
