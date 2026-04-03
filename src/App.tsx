@@ -870,65 +870,63 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
     setLoading(true);
     setError(null);
     try {
-      // Using a curated list for reliable high-quality daily hadiths
+      // Using a curated list of substantial, narrative-driven Hadiths for deep engagement
       const hadiths: Hadith[] = [
         {
-          text: "The best among you are those who have the best manners and character.",
-          source: "Sahih Bukhari",
-          reference: "Book 78, Hadith 6035"
-        },
-        {
-          text: "None of you truly believes until he loves for his brother what he loves for himself.",
-          source: "Sahih Bukhari & Muslim",
-          reference: "Hadith 13, 40 Hadith Nawawi"
-        },
-        {
-          text: "The strong man is not the one who can overpower others (in wrestling); rather, the strong man is the one who controls himself when he gets angry.",
-          source: "Sahih Bukhari",
-          reference: "Book 78, Hadith 6114"
-        },
-        {
-          text: "A good word is charity.",
-          source: "Sahih Bukhari",
-          reference: "Book 56, Hadith 2989"
-        },
-        {
-          text: "Allah does not look at your figures, nor at your attire but He looks at your hearts and your accomplishments.",
+          text: "One day while the Prophet was sitting with his companions, a man with very white clothes and very black hair appeared. He sat down by the Prophet, rested his knees against his, and placed his palms on his thighs. He asked: 'O Muhammad, tell me about Islam.' The Messenger said: 'Islam is to testify that there is no god but Allah and Muhammad is the Messenger of Allah, to perform the prayers, to pay the zakat, to fast in Ramadan, and to make the pilgrimage to the House if you are able to do so.' He said: 'You have spoken the truth.' We were amazed that he asked him and then told him that he had spoken the truth. He then asked about Iman (Faith), Ihsan (Perfection), and the Hour. After the man left, the Prophet asked: 'O Umar, do you know who the questioner was?' I said: 'Allah and His Messenger know best.' He said: 'He was Jibril (Gabriel), who came to you to teach you your religion.'",
           source: "Sahih Muslim",
-          reference: "Book 45, Hadith 2564"
-        },
-        {
-          text: "He who believes in Allah and the Last Day must either speak good or remain silent.",
-          source: "Sahih Bukhari",
-          reference: "Book 78, Hadith 6018"
-        },
-        {
-          text: "The most beloved of deeds to Allah are those that are most consistent, even if they are small.",
-          source: "Sahih Bukhari",
-          reference: "Book 81, Hadith 6464"
+          reference: "Book 1, Hadith 1"
         },
         {
           text: "There was a man from among those who were before you who killed ninety-nine people. He then asked about the most knowledgeable person on earth and was directed to a monk. He went to him and said that he had killed ninety-nine people, and asked if there was any repentance for him. The monk said: 'No.' So he killed him and completed one hundred. He then asked about the most knowledgeable person on earth and was directed to a scholar. He said that he had killed one hundred people and asked if there was any repentance for him. The scholar said: 'Yes, what could stand between you and repentance? Go to such and such a land, for in it there are people who worship Allah. Worship Allah with them and do not return to your own land, for it is an evil place.' So he set out, but when he was halfway there, death came to him. The angels of mercy and the angels of punishment argued over him. The angels of mercy said: 'He came repentant, turning with his heart towards Allah.' The angels of punishment said: 'He never did anything good.' An angel in the form of a man came to them and they made him an arbiter between them. He said: 'Measure the distance between the two lands, and whichever one he is closer to, that is where he belongs.' They measured it and found that he was closer to the land he was heading towards, so the angels of mercy took him.",
-          source: "Sahih Bukhari & Muslim",
+          source: "Sahih al-Bukhari & Sahih Muslim",
           reference: "Book 46, Hadith 3470"
         },
         {
           text: "Three men were traveling when they were overtaken by rain and took shelter in a cave in a mountain. A rock fell from the mountain and blocked the entrance to the cave. They said to one another: 'Nothing can save you from this rock except that you supplicate to Allah by virtue of your good deeds.' One of them said: 'O Allah, I had elderly parents and I used to bring them milk every evening. One day I was delayed and found them sleeping. I did not want to wake them or give the milk to my children before them, so I waited with the bowl in my hand until dawn. If I did this seeking Your pleasure, then release us from this rock.' The rock moved slightly. The second said: 'O Allah, I had a cousin whom I loved dearly. I tried to seduce her but she refused until I gave her a hundred dinars. When I was about to touch her, she said: \"Fear Allah and do not break the seal except rightfully.\" So I left her and the money. If I did this seeking Your pleasure, then release us from this rock.' The rock moved further. The third said: 'O Allah, I hired some laborers and paid them all except one who left without taking his wage. I invested his wage until it grew into many cattle and servants. Years later he came and asked for his wage. I said: \"All these cattle and servants are yours.\" He said: \"Do not mock me.\" I said: \"I am not mocking you.\" So he took them all. If I did this seeking Your pleasure, then release us from this rock.' The rock moved and they were able to walk out.",
-          source: "Sahih Bukhari & Muslim",
+          source: "Sahih al-Bukhari & Sahih Muslim",
           reference: "Book 34, Hadith 2215"
         },
         {
           text: "While a man was walking on a road, he became very thirsty and found a well. He went down into it, drank, and came out. There he saw a dog panting and eating moist earth because of thirst. The man said: 'This dog is suffering from the same problem as that of mine.' So he went down into the well again, filled his shoe with water, held it with his teeth, and climbed up and watered the dog. Allah thanked him for his (good) deed and forgave him. The people asked: 'O Allah's Messenger! Is there a reward for us in serving the animals?' He replied: 'Yes, there is a reward for serving any living being.'",
-          source: "Sahih Bukhari",
+          source: "Sahih al-Bukhari",
           reference: "Book 42, Hadith 2363"
         },
         {
           text: "The last person to enter Paradise will be a man who will walk once, stumble once, and be burned by the Fire once. When he gets past it, he will turn back and say: 'Blessed be He Who has saved me from you. Allah has given me something He has not given to any of those of old or those of later times.' Then a tree will be raised up for him and he will say: 'O my Lord, bring me near to this tree so that I may take shelter in its shade and drink of its water.' Allah will say: 'O son of Adam, if I give you this, will you ask for anything else?' He will say: 'No, my Lord,' and he will promise Him that he will not ask for anything else. His Lord will excuse him because he is seeing something that he cannot help wanting. So He will bring him near to it and he will take shelter in its shade and drink of its water. Then another tree will be raised up for him that is more beautiful than the first... until he enters Paradise and Allah says: 'You shall have all that and ten times more.'",
           source: "Sahih Muslim",
           reference: "Book 1, Hadith 187"
+        },
+        {
+          text: "Allah decided to test three men from the Children of Israel: a leper, a bald man, and a blind man. He sent an angel to them. The leper asked for beautiful skin, and he was granted it along with a pregnant camel. The bald man asked for beautiful hair, and he was granted it along with a pregnant cow. The blind man asked for his sight to be restored, and he was granted it along with a pregnant sheep. Years later, the angel returned to them in their former shapes to test their gratitude. The leper and the bald man, now wealthy, refused to help the 'poor traveler' (the angel), claiming they had inherited their wealth. Their blessings were taken away. But the blind man said: 'I was indeed blind and Allah restored my sight, and I was poor and He made me rich. Take whatever you wish.' The angel said: 'Keep your property. You three were tested, and Allah is pleased with you and angry with your two companions.'",
+          source: "Sahih al-Bukhari & Sahih Muslim",
+          reference: "Book 60, Hadith 3464"
+        },
+        {
+          text: "The Prophet said: 'Do you know who the bankrupt (muflis) is?' The companions said: 'The one who has no money or property.' He said: 'The bankrupt of my Ummah is the one who comes on the Day of Resurrection with prayers, fasting, and zakat, but he had insulted this one, falsely accused that one, consumed the wealth of this one, shed the blood of that one, and struck this one. So his good deeds will be given to them, and if his good deeds run out before his account is settled, their sins will be taken and cast upon him, and then he will be thrown into the Fire.'",
+          source: "Sahih Muslim",
+          reference: "Book 45, Hadith 2581"
+        },
+        {
+          text: "A man came to the Prophet and asked: 'O Messenger of Allah, which charity is the best?' He replied: 'That you should give charity while you are healthy, stingy, fearing poverty and hoping for riches. Do not delay until you are at the point of death and say: \"Give this to so-and-so and that to so-and-so,\" for at that point it already belongs to them.'",
+          source: "Sahih al-Bukhari",
+          reference: "Book 24, Hadith 1419"
+        },
+        {
+          text: "The Messenger of Allah said: 'Verily, Allah has recorded good deeds and evil deeds and then He explained how. Whosoever intended to perform a good deed and did not do it, Allah will record it as a complete good deed. If he intended it and did it, Allah will record it as ten good deeds up to seven hundred times or even more. If he intended to do an evil deed and did not do it, Allah will record it as a complete good deed. If he intended it and did it, Allah will record it as one evil deed.'",
+          source: "Sahih al-Bukhari & Sahih Muslim",
+          reference: "Hadith 37, 40 Hadith Nawawi"
+        },
+        {
+          text: "The Prophet said: 'Seven people will be shaded by Allah under His shade on the Day when there will be no shade except His: a just ruler; a youth who grew up in the worship of Allah; a man whose heart is attached to the mosques; two people who love each other for Allah's sake; a man who is invited by a woman of beauty and status and says: \"I fear Allah\"; a man who gives in charity so secretly that his left hand does not know what his right hand has given; and a man who remembers Allah in private and his eyes overflow with tears.'",
+          source: "Sahih al-Bukhari & Sahih Muslim",
+          reference: "Book 24, Hadith 1423"
         }
       ];
-      const randomHadith = hadiths[Math.floor(Math.random() * hadiths.length)];
+
+      // Selection logic: Filter for longer Hadiths to ensure engagement
+      const longHadiths = hadiths.filter(h => h.text.length > 150);
+      const randomHadith = longHadiths[Math.floor(Math.random() * longHadiths.length)];
       setHadith(randomHadith);
     } catch (err) {
       setError('Failed to fetch hadith.');
