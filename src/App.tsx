@@ -82,6 +82,19 @@ interface BookmarkItem extends Ayah {
   bookmarked_at: number;
 }
 
+interface SavedSurah {
+  surah_number: number;
+  surah_name: string;
+  surah_meaning: string;
+  saved_at: number;
+  full_audio_url?: string;
+  is_partial?: boolean;
+}
+
+interface SavedHadith extends Hadith {
+  saved_at: number;
+}
+
 interface Hadith {
   text: string;
   source: string;
@@ -491,8 +504,8 @@ const TRANSLATION_ID = 131; // Clear Quran (English)
 const RECITER_ID = 7; // Mishary Rashid Alafasy
 
 export default function App() {
-  const [view, setView] = useState<'dashboard' | 'daily-amal' | 'bookmarks' | 'chat'>('dashboard');
-  const [dashboardTab, setDashboardTab] = useState<'home' | 'bookmarks' | 'tracker'>('home');
+  const [view, setView] = useState<'dashboard' | 'deen' | 'daily-amal' | 'bookmarks' | 'chat'>('dashboard');
+  const [dashboardTab, setDashboardTab] = useState<'home' | 'bookmarks'>('home');
   const [amalTab, setAmalTab] = useState<'surah' | 'hadith' | 'dua'>('surah');
   const [selectedDuaCategory, setSelectedDuaCategory] = useState<string>(DUA_DATA[0].category);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -514,6 +527,9 @@ export default function App() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [streak, setStreak] = useState(0);
   const [bookmarks, setBookmarks] = useState<BookmarkItem[]>([]);
+  const [savedSurahs, setSavedSurahs] = useState<SavedSurah[]>([]);
+  const [savedHadiths, setSavedHadiths] = useState<SavedHadith[]>([]);
+  const [bookmarkSubTab, setBookmarkSubTab] = useState<'ayahs' | 'surahs' | 'hadiths'>('ayahs');
 
   // Chat State
   const [messages, setMessages] = useState<{ role: 'user' | 'bot'; content: string }[]>([
@@ -523,50 +539,54 @@ export default function App() {
   const [isTyping, setIsTyping] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // --- 1. INITIALIZATION (Streak & Bookmarks) ---
-  useEffect(() => {
-    // Streak Logic
-    const lastVisit = localStorage.getItem('quran_last_visit');
-    const currentStreak = parseInt(localStorage.getItem('quran_streak') || '0');
-    const today = new Date().toDateString();
-    const yesterday = new Date(Date.now() - 86400000).toDateString();
+  const updatePrayerStatus = useCallback((now: Date, timings: Record<string, string>) => {
+    const prayers = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+    const prayerDates = prayers.map(name => {
+      const [hours, minutes] = timings[name].split(':').map(Number);
+      const d = new Date(now);
+      d.setHours(hours, minutes, 0, 0);
+      return { name, date: d };
+    });
 
-    if (lastVisit === today) {
-      setStreak(currentStreak);
-    } else if (lastVisit === yesterday) {
-      const newStreak = currentStreak + 1;
-      setStreak(newStreak);
-      localStorage.setItem('quran_streak', newStreak.toString());
-    } else {
-      setStreak(1);
-      localStorage.setItem('quran_streak', '1');
-    }
-    localStorage.setItem('quran_last_visit', today);
+    let current = '';
+    let nextIdx = -1;
 
-    // Bookmarks Logic
-    const savedBookmarks = JSON.parse(localStorage.getItem('quran_bookmarks') || '[]');
-    setBookmarks(savedBookmarks);
-
-    // Clock Logic
-    const timer = setInterval(() => {
-      const now = new Date();
-      setCurrentTime(now);
-      
-      // Update prayer status if times are available
-      if (prayerTimes) {
-        updatePrayerStatus(now, prayerTimes);
+    // Find the next prayer
+    for (let i = 0; i < prayerDates.length; i++) {
+      if (prayerDates[i].date > now) {
+        nextIdx = i;
+        break;
       }
-    }, 1000);
-
-    // Prayer Times Logic
-    if ("geolocation" in navigator) {
-      loadPrayerTimes();
     }
 
-    return () => clearInterval(timer);
-  }, [prayerTimes]);
+    let nextPrayerDate: Date;
+    let nextName: string;
 
-  const loadPrayerTimes = () => {
+    if (nextIdx === -1) {
+      // All prayers for today have passed, next is Fajr tomorrow
+      current = 'Isha';
+      nextName = 'Fajr';
+      nextPrayerDate = new Date(prayerDates[0].date);
+      nextPrayerDate.setDate(nextPrayerDate.getDate() + 1);
+    } else {
+      nextName = prayerDates[nextIdx].name;
+      nextPrayerDate = prayerDates[nextIdx].date;
+      current = nextIdx === 0 ? 'Isha' : prayers[nextIdx - 1];
+    }
+
+    const diff = nextPrayerDate.getTime() - now.getTime();
+    const h = Math.floor(diff / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    const s = Math.floor((diff % 60000) / 1000);
+
+    setPrayerStatus({
+      current,
+      next: nextName,
+      remaining: `${h}h ${m}m ${s}s`
+    });
+  }, []);
+
+  const loadPrayerTimes = useCallback(() => {
     setPrayerLoading(true);
     setPrayerError(null);
     
@@ -642,54 +662,58 @@ export default function App() {
       setPrayerTimes(meccaTimings);
       updatePrayerStatus(new Date(), meccaTimings);
     });
-  };
+  }, [updatePrayerStatus]);
 
-  const updatePrayerStatus = (now: Date, timings: Record<string, string>) => {
-    const prayers = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
-    const prayerDates = prayers.map(name => {
-      const [hours, minutes] = timings[name].split(':').map(Number);
-      const d = new Date(now);
-      d.setHours(hours, minutes, 0, 0);
-      return { name, date: d };
-    });
+  // --- 1. INITIALIZATION (Streak & Bookmarks & Geolocation) ---
+  useEffect(() => {
+    // Streak Logic
+    const lastVisit = localStorage.getItem('quran_last_visit');
+    const currentStreak = parseInt(localStorage.getItem('quran_streak') || '0');
+    const today = new Date().toDateString();
+    const yesterday = new Date(Date.now() - 86400000).toDateString();
 
-    let current = '';
-    let nextIdx = -1;
-
-    // Find the next prayer
-    for (let i = 0; i < prayerDates.length; i++) {
-      if (prayerDates[i].date > now) {
-        nextIdx = i;
-        break;
-      }
-    }
-
-    let nextPrayerDate: Date;
-    let nextName: string;
-
-    if (nextIdx === -1) {
-      // All prayers for today have passed, next is Fajr tomorrow
-      current = 'Isha';
-      nextName = 'Fajr';
-      nextPrayerDate = new Date(prayerDates[0].date);
-      nextPrayerDate.setDate(nextPrayerDate.getDate() + 1);
+    if (lastVisit === today) {
+      setStreak(currentStreak);
+    } else if (lastVisit === yesterday) {
+      const newStreak = currentStreak + 1;
+      setStreak(newStreak);
+      localStorage.setItem('quran_streak', newStreak.toString());
     } else {
-      nextName = prayerDates[nextIdx].name;
-      nextPrayerDate = prayerDates[nextIdx].date;
-      current = nextIdx === 0 ? 'Isha' : prayers[nextIdx - 1];
+      setStreak(1);
+      localStorage.setItem('quran_streak', '1');
     }
+    localStorage.setItem('quran_last_visit', today);
 
-    const diff = nextPrayerDate.getTime() - now.getTime();
-    const h = Math.floor(diff / 3600000);
-    const m = Math.floor((diff % 3600000) / 60000);
-    const s = Math.floor((diff % 60000) / 1000);
+    // Bookmarks Logic
+    const savedBookmarks = JSON.parse(localStorage.getItem('quran_bookmarks') || '[]');
+    setBookmarks(savedBookmarks);
 
-    setPrayerStatus({
-      current,
-      next: nextName,
-      remaining: `${h}h ${m}m ${s}s`
-    });
-  };
+    const savedSurahsList = JSON.parse(localStorage.getItem('quran_saved_surahs') || '[]');
+    setSavedSurahs(savedSurahsList);
+
+    const savedHadithsList = JSON.parse(localStorage.getItem('quran_saved_hadiths') || '[]');
+    setSavedHadiths(savedHadithsList);
+
+    // Prayer Times Logic
+    if ("geolocation" in navigator) {
+      loadPrayerTimes();
+    }
+  }, [loadPrayerTimes]);
+
+  // --- 2. CLOCK & PRAYER STATUS ---
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = new Date();
+      setCurrentTime(now);
+      
+      // Update prayer status if times are available
+      if (prayerTimes) {
+        updatePrayerStatus(now, prayerTimes);
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [prayerTimes, updatePrayerStatus]);
 
   // --- CHAT LOGIC ---
   const scrollToBottom = () => {
@@ -1143,6 +1167,37 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
     localStorage.setItem('quran_bookmarks', JSON.stringify(newBookmarks));
   };
 
+  const toggleSurahBookmark = (surah: SurahContent) => {
+    const isSaved = savedSurahs.some(s => s.surah_number === surah.surah_number);
+    let newSaved: SavedSurah[];
+    if (isSaved) {
+      newSaved = savedSurahs.filter(s => s.surah_number !== surah.surah_number);
+    } else {
+      newSaved = [...savedSurahs, {
+        surah_number: surah.surah_number,
+        surah_name: surah.surah_name,
+        surah_meaning: surah.surah_meaning,
+        saved_at: Date.now(),
+        full_audio_url: surah.full_audio_url,
+        is_partial: surah.is_partial
+      }];
+    }
+    setSavedSurahs(newSaved);
+    localStorage.setItem('quran_saved_surahs', JSON.stringify(newSaved));
+  };
+
+  const toggleHadithBookmark = (item: Hadith) => {
+    const isSaved = savedHadiths.some(h => h.text === item.text);
+    let newSaved: SavedHadith[];
+    if (isSaved) {
+      newSaved = savedHadiths.filter(h => h.text !== item.text);
+    } else {
+      newSaved = [...savedHadiths, { ...item, saved_at: Date.now() }];
+    }
+    setSavedHadiths(newSaved);
+    localStorage.setItem('quran_saved_hadiths', JSON.stringify(newSaved));
+  };
+
   return (
     <div className="min-h-screen bg-white text-slate-900 pb-24 font-sans">
       {/* Header */}
@@ -1154,10 +1209,10 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
             </div>
             <div>
               <h1 className="text-xl font-bold tracking-tight">
-                {view === 'chat' ? 'Quran Assistant' : 'Pocket Quran'}
+                {view === 'chat' ? 'Quran Assistant' : view === 'deen' ? 'Deen Tracker' : 'Pocket Quran'}
               </h1>
               <p className="text-emerald-100 text-xs">
-                {view === 'chat' ? 'Ask me anything about the Quran' : 'Your daily spiritual companion'}
+                {view === 'chat' ? 'Ask me anything about the Quran' : view === 'deen' ? 'Track your daily spiritual progress' : 'Your daily spiritual companion'}
               </p>
             </div>
           </div>
@@ -1327,6 +1382,119 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+            </motion.div>
+          ) : view === 'deen' ? (
+            <motion.div
+              key="deen"
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+              className="space-y-6 pb-20"
+            >
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="font-bold text-slate-800">Daily Prayer Tracker</h3>
+                  <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg uppercase tracking-wider">
+                    {currentTime.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'short' })}
+                  </span>
+                </div>
+                
+                <div className="space-y-3">
+                  {['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'].map((prayer) => {
+                    const isDone = localStorage.getItem(`prayer_${prayer}_${new Date().toDateString()}`) === 'true';
+                    return (
+                      <button
+                        key={prayer}
+                        onClick={() => {
+                          const key = `prayer_${prayer}_${new Date().toDateString()}`;
+                          const current = localStorage.getItem(key) === 'true';
+                          localStorage.setItem(key, (!current).toString());
+                          // Force re-render
+                          setView('deen');
+                        }}
+                        className={`w-full flex items-center justify-between p-4 rounded-2xl border transition-all ${
+                          isDone 
+                            ? 'bg-emerald-50 border-emerald-200 text-emerald-700' 
+                            : 'bg-white border-slate-100 text-slate-600 hover:border-emerald-100'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+                            isDone ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-400'
+                          }`}>
+                            {isDone ? <Check className="w-4 h-4" /> : <div className="w-2 h-2 rounded-full bg-slate-300" />}
+                          </div>
+                          <span className="font-bold text-sm">{prayer}</span>
+                        </div>
+                        {prayerTimes && (
+                          <span className="text-[10px] font-medium text-slate-400">{prayerTimes[prayer]}</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Good Deeds Section */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="font-bold text-slate-800">Good Deeds</h3>
+                  <Sparkles className="w-5 h-5 text-amber-500" />
+                </div>
+                <div className="grid grid-cols-1 gap-3">
+                  {[
+                    { id: 'charity', label: 'Gave Charity', icon: Heart },
+                    { id: 'parents', label: 'Helped Parents', icon: User },
+                    { id: 'dhikr', label: 'Morning/Evening Dhikr', icon: Sparkles },
+                    { id: 'quran', label: 'Read Quran', icon: BookOpenText },
+                  ].map((deed) => {
+                    const isDone = localStorage.getItem(`deed_${deed.id}_${new Date().toDateString()}`) === 'true';
+                    return (
+                      <button
+                        key={deed.id}
+                        onClick={() => {
+                          const key = `deed_${deed.id}_${new Date().toDateString()}`;
+                          const current = localStorage.getItem(key) === 'true';
+                          localStorage.setItem(key, (!current).toString());
+                          setView('deen');
+                        }}
+                        className={`flex items-center gap-3 p-4 rounded-2xl border transition-all ${
+                          isDone 
+                            ? 'bg-amber-50 border-amber-200 text-amber-700' 
+                            : 'bg-white border-slate-100 text-slate-600 hover:border-amber-100'
+                        }`}
+                      >
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+                          isDone ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-400'
+                        }`}>
+                          <deed.icon className="w-4 h-4" />
+                        </div>
+                        <span className="font-bold text-sm">{deed.label}</span>
+                        {isDone && <Check className="w-4 h-4 ml-auto" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="bg-emerald-600 p-6 rounded-3xl text-white shadow-lg shadow-emerald-600/20">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 bg-white/20 rounded-xl">
+                    <Activity className="w-5 h-5" />
+                  </div>
+                  <h3 className="font-bold">Spiritual Progress</h3>
+                </div>
+                <p className="text-emerald-50 text-xs leading-relaxed mb-4">
+                  Consistency is key to spiritual growth. Keep tracking your daily prayers and good deeds to build a lasting habit.
+                </p>
+                <div className="flex items-center justify-between bg-white/10 p-3 rounded-2xl">
+                  <span className="text-[10px] font-bold uppercase tracking-widest">Current Streak</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xl font-black">{streak}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest">Days</span>
+                  </div>
                 </div>
               </div>
             </motion.div>
@@ -1522,6 +1690,18 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
                             <ArrowRight className={`w-4 h-4 ${loading ? 'animate-pulse' : ''}`} />
                             Next Surah
                           </button>
+
+                          <button
+                            onClick={() => surahContent && toggleSurahBookmark(surahContent)}
+                            className={`px-4 py-2.5 rounded-2xl transition-all flex items-center gap-2 border text-sm font-bold ${
+                              savedSurahs.some(s => s.surah_number === surahContent?.surah_number)
+                                ? 'bg-amber-600 text-white border-amber-600 shadow-lg shadow-amber-200'
+                                : 'bg-amber-50 text-amber-600 border-amber-100 hover:bg-amber-100'
+                            }`}
+                          >
+                            <Bookmark className={`w-4 h-4 ${savedSurahs.some(s => s.surah_number === surahContent?.surah_number) ? 'fill-current' : ''}`} />
+                            {savedSurahs.some(s => s.surah_number === surahContent?.surah_number) ? 'Saved' : 'Save Surah'}
+                          </button>
                         </div>
                       </div>
 
@@ -1679,6 +1859,17 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
                           <RefreshCw className={`w-5 h-5 mr-2 ${loading ? 'animate-spin' : ''}`} />
                           Next Hadith
                         </button>
+                        <button
+                          onClick={() => toggleHadithBookmark(hadith)}
+                          className={`px-6 py-4 rounded-2xl font-bold transition-all border flex items-center justify-center gap-2 ${
+                            savedHadiths.some(h => h.text === hadith.text)
+                              ? 'bg-amber-600 text-white border-amber-600 shadow-lg shadow-amber-200'
+                              : 'bg-amber-50 text-amber-600 border-amber-100 hover:bg-amber-100'
+                          }`}
+                        >
+                          <Bookmark className={`w-5 h-5 ${savedHadiths.some(h => h.text === hadith.text) ? 'fill-current' : ''}`} />
+                          {savedHadiths.some(h => h.text === hadith.text) ? 'Saved' : 'Save'}
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -1783,8 +1974,7 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
                     </button>
                   )}
                   <h2 className="text-2xl font-bold text-slate-800">
-                    {dashboardTab === 'home' ? 'Dashboard' : 
-                     dashboardTab === 'bookmarks' ? 'Bookmarks' : 'Deen Tracker'}
+                    {dashboardTab === 'home' ? 'Dashboard' : 'Bookmarks'}
                   </h2>
                 </div>
               </div>
@@ -1809,7 +1999,7 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
                   </button>
 
                   <button
-                    onClick={() => setDashboardTab('tracker')}
+                    onClick={() => setView('deen')}
                     className="group relative overflow-hidden bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:border-emerald-200 hover:shadow-md transition-all text-left"
                   >
                     <div className="flex items-center gap-4">
@@ -1840,201 +2030,243 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
                         <span className="text-[10px] font-bold uppercase">Verses</span>
                       </div>
                     </div>
+                    <div className="bg-amber-600 p-5 rounded-3xl text-white shadow-lg shadow-amber-600/20 col-span-2">
+                      <span className="text-[10px] font-bold uppercase tracking-widest opacity-80">Saved Surahs</span>
+                      <div className="mt-1 flex items-baseline gap-1">
+                        <span className="text-3xl font-black">{savedSurahs.length}</span>
+                        <span className="text-[10px] font-bold uppercase">Chapters</span>
+                      </div>
+                    </div>
+                    <div className="bg-blue-600 p-5 rounded-3xl text-white shadow-lg shadow-blue-600/20 col-span-2">
+                      <span className="text-[10px] font-bold uppercase tracking-widest opacity-80">Saved Hadiths</span>
+                      <div className="mt-1 flex items-baseline gap-1">
+                        <span className="text-3xl font-black">{savedHadiths.length}</span>
+                        <span className="text-[10px] font-bold uppercase">Narrations</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               ) : dashboardTab === 'bookmarks' ? (
-                <div className="space-y-4">
-                  {bookmarks.length === 0 ? (
-                    <div className="text-center py-20 bg-slate-50 rounded-3xl border border-dashed border-slate-300">
-                      <Bookmark className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-                      <p className="text-slate-400 font-medium">No bookmarks yet.</p>
-                      <button 
-                        onClick={() => setView('dashboard')}
-                        className="mt-4 text-emerald-600 font-bold text-sm hover:underline"
-                      >
-                        Explore Quran
-                      </button>
+                <div className="space-y-6">
+                  {/* Bookmark Sub-Tabs */}
+                  <div className="flex p-1 bg-slate-100 rounded-xl w-fit mx-auto overflow-x-auto max-w-full">
+                    <button
+                      onClick={() => setBookmarkSubTab('ayahs')}
+                      className={`px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all whitespace-nowrap ${
+                        bookmarkSubTab === 'ayahs'
+                          ? 'bg-white text-emerald-600 shadow-sm'
+                          : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      Ayahs ({bookmarks.length})
+                    </button>
+                    <button
+                      onClick={() => setBookmarkSubTab('surahs')}
+                      className={`px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all whitespace-nowrap ${
+                        bookmarkSubTab === 'surahs'
+                          ? 'bg-white text-emerald-600 shadow-sm'
+                          : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      Surahs ({savedSurahs.length})
+                    </button>
+                    <button
+                      onClick={() => setBookmarkSubTab('hadiths')}
+                      className={`px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all whitespace-nowrap ${
+                        bookmarkSubTab === 'hadiths'
+                          ? 'bg-white text-emerald-600 shadow-sm'
+                          : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      Hadiths ({savedHadiths.length})
+                    </button>
+                  </div>
+
+                  {bookmarkSubTab === 'ayahs' ? (
+                    <div className="space-y-4">
+                      {bookmarks.length === 0 ? (
+                        <div className="text-center py-20 bg-slate-50 rounded-3xl border border-dashed border-slate-300">
+                          <Bookmark className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                          <p className="text-slate-400 font-medium">No bookmarked Ayahs yet.</p>
+                        </div>
+                      ) : (
+                        <div className="grid gap-4">
+                          {bookmarks.map((b) => (
+                            <div key={b.verse_key} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative group">
+                              <div className="flex justify-between items-start mb-4">
+                                <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full">
+                                  {b.surah_name} {b.surah_meaning && `(${b.surah_meaning})`} : {b.ayah_number}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  {b.audio_url && (
+                                    <button
+                                      onClick={() => toggleAudio(b.audio_url, b.verse_key)}
+                                      className={`p-2 rounded-full transition-all ${
+                                        activeAudioKey === b.verse_key 
+                                          ? 'bg-emerald-600 text-white' 
+                                          : 'bg-slate-50 text-slate-400 hover:text-emerald-600'
+                                      }`}
+                                    >
+                                      {audioLoading && activeAudioKey === b.verse_key ? (
+                                        <RefreshCw className="w-4 h-4 animate-spin" />
+                                      ) : isPlaying && activeAudioKey === b.verse_key ? (
+                                        <Pause className="w-4 h-4 fill-current" />
+                                      ) : (
+                                        <Play className="w-4 h-4 fill-current" />
+                                      )}
+                                    </button>
+                                  )}
+                                  <button 
+                                    onClick={() => toggleBookmark(b)}
+                                    className="p-2 text-slate-300 hover:text-red-500 transition-colors"
+                                  >
+                                    <Trash2 className="w-5 h-5" />
+                                  </button>
+                                </div>
+                              </div>
+                              <div className={`transition-all duration-500 rounded-xl ${isPlaying && activeAudioKey === b.verse_key ? 'highlight-active p-2' : ''}`}>
+                                <p className="arabic-text text-2xl text-right mb-4 text-slate-800 leading-relaxed">{b.text_uthmani}</p>
+                              </div>
+                              
+                              <div className="mt-4 pt-4 border-t border-slate-50">
+                                <span className="text-slate-400 text-[9px] font-bold uppercase tracking-widest mb-1 block">Reference</span>
+                                <div className="flex flex-col gap-1">
+                                  <p className="text-slate-600 text-xs font-medium">
+                                    {b.surah_name} — {b.surah_number}:{b.ayah_number}
+                                  </p>
+                                  <div className="flex flex-col gap-1.5">
+                                    <a 
+                                      href={b.external_link}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center text-emerald-600 hover:text-emerald-700 font-bold text-[10px] transition-colors group w-fit"
+                                    >
+                                      <ChevronRight className="w-3 h-3 mr-0.5 group-hover:translate-x-0.5 transition-transform" />
+                                      View on Quran.com
+                                    </a>
+                                    <a 
+                                      href={b.surah_link}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center text-slate-400 hover:text-emerald-600 font-medium text-[10px] transition-colors group w-fit"
+                                    >
+                                      <BookOpenText className="w-3 h-3 mr-1 group-hover:translate-x-0.5 transition-transform" />
+                                      Read Full Surah
+                                    </a>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : bookmarkSubTab === 'surahs' ? (
+                    <div className="space-y-4">
+                      {savedSurahs.length === 0 ? (
+                        <div className="text-center py-20 bg-slate-50 rounded-3xl border border-dashed border-slate-300">
+                          <BookOpenText className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                          <p className="text-slate-400 font-medium">No saved Surahs yet.</p>
+                        </div>
+                      ) : (
+                        <div className="grid gap-4">
+                          {savedSurahs.map((s) => (
+                            <div key={s.surah_number} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm group">
+                              <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-4">
+                                  <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold text-sm border border-amber-100">
+                                    {s.surah_number}
+                                  </div>
+                                  <div>
+                                    <h4 className="font-bold text-slate-800">{s.surah_name}</h4>
+                                    <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">{s.surah_meaning}</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {s.full_audio_url && (
+                                    <button
+                                      onClick={() => toggleAudio(s.full_audio_url, `surah_${s.surah_number}`)}
+                                      className={`p-2.5 rounded-xl transition-all ${
+                                        activeAudioKey === `surah_${s.surah_number}`
+                                          ? 'bg-emerald-600 text-white'
+                                          : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                                      }`}
+                                    >
+                                      {activeAudioKey === `surah_${s.surah_number}` && isPlaying ? (
+                                        <Pause className="w-4 h-4" />
+                                      ) : (
+                                        <Play className="w-4 h-4" />
+                                      )}
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => toggleSurahBookmark({
+                                      surah_number: s.surah_number,
+                                      surah_name: s.surah_name,
+                                      surah_meaning: s.surah_meaning,
+                                      full_audio_url: s.full_audio_url,
+                                      is_partial: s.is_partial,
+                                      verses: [] // Not needed for removal
+                                    })}
+                                    className="p-2.5 text-slate-300 hover:text-red-500 transition-colors"
+                                  >
+                                    <Trash2 className="w-5 h-5" />
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="mt-4 pt-4 border-t border-slate-50 flex justify-between items-center">
+                                <span className="text-[10px] text-slate-400 font-medium italic">
+                                  Saved on {new Date(s.saved_at).toLocaleDateString()}
+                                </span>
+                                <a 
+                                  href={`https://quran.com/${s.surah_number}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[10px] font-bold text-emerald-600 hover:underline flex items-center gap-1"
+                                >
+                                  Read Full <ChevronRight className="w-3 h-3" />
+                                </a>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ) : (
-                      <div className="grid gap-4">
-                        {bookmarks.map((b) => (
-                          <div key={b.verse_key} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative group">
-                            <div className="flex justify-between items-start mb-4">
-                              <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full">
-                                {b.surah_name} {b.surah_meaning && `(${b.surah_meaning})`} : {b.ayah_number}
-                              </span>
-                              <div className="flex items-center gap-2">
-                                {b.audio_url && (
-                                  <button
-                                    onClick={() => toggleAudio(b.audio_url, b.verse_key)}
-                                    className={`p-2 rounded-full transition-all ${
-                                      activeAudioKey === b.verse_key 
-                                        ? 'bg-emerald-600 text-white' 
-                                        : 'bg-slate-50 text-slate-400 hover:text-emerald-600'
-                                    }`}
-                                  >
-                                    {audioLoading && activeAudioKey === b.verse_key ? (
-                                      <RefreshCw className="w-4 h-4 animate-spin" />
-                                    ) : isPlaying && activeAudioKey === b.verse_key ? (
-                                      <Pause className="w-4 h-4 fill-current" />
-                                    ) : (
-                                      <Play className="w-4 h-4 fill-current" />
-                                    )}
-                                  </button>
-                                )}
+                    <div className="space-y-4">
+                      {savedHadiths.length === 0 ? (
+                        <div className="text-center py-20 bg-slate-50 rounded-3xl border border-dashed border-slate-300">
+                          <Sparkles className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                          <p className="text-slate-400 font-medium">No saved Hadiths yet.</p>
+                        </div>
+                      ) : (
+                        <div className="grid gap-4">
+                          {savedHadiths.map((h, idx) => (
+                            <div key={idx} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative group">
+                              <div className="flex justify-between items-start mb-4">
+                                <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full uppercase tracking-wider">
+                                  {h.source}
+                                </span>
                                 <button 
-                                  onClick={() => toggleBookmark(b)}
+                                  onClick={() => toggleHadithBookmark(h)}
                                   className="p-2 text-slate-300 hover:text-red-500 transition-colors"
                                 >
                                   <Trash2 className="w-5 h-5" />
                                 </button>
                               </div>
-                            </div>
-                            <div className={`transition-all duration-500 rounded-xl ${isPlaying && activeAudioKey === b.verse_key ? 'highlight-active p-2' : ''}`}>
-                              <p className="arabic-text text-2xl text-right mb-4 text-slate-800 leading-relaxed">{b.text_uthmani}</p>
-                            </div>
-                            
-                            <div className="mt-4 pt-4 border-t border-slate-50">
-                              <span className="text-slate-400 text-[9px] font-bold uppercase tracking-widest mb-1 block">Reference</span>
-                              <div className="flex flex-col gap-1">
-                                <p className="text-slate-600 text-xs font-medium">
-                                  {b.surah_name} — {b.surah_number}:{b.ayah_number}
-                                </p>
-                                <div className="flex flex-col gap-1.5">
-                                  <a 
-                                    href={b.external_link}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center text-emerald-600 hover:text-emerald-700 font-bold text-[10px] transition-colors group w-fit"
-                                  >
-                                    <ChevronRight className="w-3 h-3 mr-0.5 group-hover:translate-x-0.5 transition-transform" />
-                                    View on Quran.com
-                                  </a>
-                                  <a 
-                                    href={b.surah_link}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center text-slate-400 hover:text-emerald-600 font-medium text-[10px] transition-colors group w-fit"
-                                  >
-                                    <BookOpenText className="w-3 h-3 mr-1 group-hover:translate-x-0.5 transition-transform" />
-                                    Read Full Surah
-                                  </a>
-                                </div>
+                              <p className="text-slate-800 font-medium italic leading-relaxed mb-4">"{h.text}"</p>
+                              <div className="pt-4 border-t border-slate-50 flex justify-between items-center">
+                                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{h.reference}</span>
+                                <span className="text-[9px] text-slate-300 italic">Saved on {new Date(h.saved_at).toLocaleDateString()}</span>
                               </div>
                             </div>
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
-              ) : (
-                <div className="space-y-6 pb-20">
-                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                    <div className="flex items-center justify-between mb-6">
-                      <h3 className="font-bold text-slate-800">Daily Prayer Tracker</h3>
-                      <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg uppercase tracking-wider">
-                        {currentTime.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'short' })}
-                      </span>
-                    </div>
-                    
-                    <div className="space-y-3">
-                      {['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'].map((prayer) => {
-                        const isDone = localStorage.getItem(`prayer_${prayer}_${new Date().toDateString()}`) === 'true';
-                        return (
-                          <button
-                            key={prayer}
-                            onClick={() => {
-                              const key = `prayer_${prayer}_${new Date().toDateString()}`;
-                              const current = localStorage.getItem(key) === 'true';
-                              localStorage.setItem(key, (!current).toString());
-                              // Force re-render
-                              setDashboardTab('tracker');
-                            }}
-                            className={`w-full flex items-center justify-between p-4 rounded-2xl border transition-all ${
-                              isDone 
-                                ? 'bg-emerald-50 border-emerald-200 text-emerald-700' 
-                                : 'bg-white border-slate-100 text-slate-600 hover:border-emerald-100'
-                            }`}
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
-                                isDone ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-400'
-                              }`}>
-                                {isDone ? <Check className="w-4 h-4" /> : <div className="w-2 h-2 rounded-full bg-slate-300" />}
-                              </div>
-                              <span className="font-bold text-sm">{prayer}</span>
-                            </div>
-                            {prayerTimes && (
-                              <span className="text-[10px] font-medium text-slate-400">{prayerTimes[prayer]}</span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Good Deeds Section */}
-                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                    <div className="flex items-center justify-between mb-6">
-                      <h3 className="font-bold text-slate-800">Good Deeds</h3>
-                      <Sparkles className="w-5 h-5 text-amber-500" />
-                    </div>
-                    <div className="grid grid-cols-1 gap-3">
-                      {[
-                        { id: 'charity', label: 'Gave Charity', icon: Heart },
-                        { id: 'parents', label: 'Helped Parents', icon: User },
-                        { id: 'dhikr', label: 'Morning/Evening Dhikr', icon: Sparkles },
-                        { id: 'quran', label: 'Read Quran', icon: BookOpenText },
-                      ].map((deed) => {
-                        const isDone = localStorage.getItem(`deed_${deed.id}_${new Date().toDateString()}`) === 'true';
-                        return (
-                          <button
-                            key={deed.id}
-                            onClick={() => {
-                              const key = `deed_${deed.id}_${new Date().toDateString()}`;
-                              const current = localStorage.getItem(key) === 'true';
-                              localStorage.setItem(key, (!current).toString());
-                              setDashboardTab('tracker');
-                            }}
-                            className={`flex items-center gap-3 p-4 rounded-2xl border transition-all ${
-                              isDone 
-                                ? 'bg-amber-50 border-amber-200 text-amber-700' 
-                                : 'bg-white border-slate-100 text-slate-600 hover:border-amber-100'
-                            }`}
-                          >
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
-                              isDone ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-400'
-                            }`}>
-                              <deed.icon className="w-4 h-4" />
-                            </div>
-                            <span className="font-bold text-sm">{deed.label}</span>
-                            {isDone && <Check className="w-4 h-4 ml-auto" />}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="bg-emerald-600 p-6 rounded-3xl text-white shadow-lg shadow-emerald-600/20">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="p-2 bg-white/20 rounded-xl">
-                        <Activity className="w-5 h-5" />
-                      </div>
-                      <h3 className="font-bold">Spiritual Progress</h3>
-                    </div>
-                    <p className="text-emerald-50 text-xs leading-relaxed mb-4">
-                      Consistency is key to spiritual growth. Keep tracking your daily prayers and good deeds to build a lasting habit.
-                    </p>
-                    <div className="flex items-center justify-between bg-white/10 p-3 rounded-2xl">
-                      <span className="text-[10px] font-bold uppercase tracking-widest">Current Streak</span>
-                      <div className="flex items-center gap-1">
-                        <span className="text-xl font-black">{streak}</span>
-                        <span className="text-[10px] font-bold uppercase tracking-widest">Days</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+              ) : null}
             </motion.div>
           )}
         </AnimatePresence>
@@ -2049,6 +2281,13 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
           >
             <Home className="w-6 h-6" />
             <span className="text-[10px] font-bold uppercase tracking-widest">Home</span>
+          </button>
+          <button 
+            onClick={() => setView('deen')} 
+            className={`flex flex-col items-center space-y-1 transition-colors ${view === 'deen' ? 'text-emerald-600' : 'text-slate-400'}`}
+          >
+            <Activity className="w-6 h-6" />
+            <span className="text-[10px] font-bold uppercase tracking-widest">Deen</span>
           </button>
           <button 
             onClick={() => setView('chat')} 
@@ -2069,7 +2308,7 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
             className={`flex flex-col items-center space-y-1 transition-colors ${view === 'bookmarks' ? 'text-emerald-600' : 'text-slate-400'}`}
           >
             <Bookmark className="w-6 h-6" />
-            <span className="text-[10px] font-bold uppercase tracking-widest">Dashboard</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest">Bookmarks</span>
           </button>
         </div>
       </nav>
