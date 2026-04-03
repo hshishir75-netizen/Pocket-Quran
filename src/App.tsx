@@ -2273,42 +2273,42 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
       </main>
 
       {/* Navigation Bar */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-6 py-4 pb-10 z-40">
-        <div className="max-w-md mx-auto flex justify-around items-center">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-2 py-4 pb-10 z-40">
+        <div className="max-w-lg mx-auto grid grid-cols-5 items-center">
           <button 
             onClick={() => setView('dashboard')} 
             className={`flex flex-col items-center space-y-1 transition-colors ${view === 'dashboard' ? 'text-emerald-600' : 'text-slate-400'}`}
           >
-            <Home className="w-6 h-6" />
-            <span className="text-[10px] font-bold uppercase tracking-widest">Home</span>
+            <Home className="w-5 h-5 sm:w-6 sm:h-6" />
+            <span className="text-[8px] sm:text-[10px] font-bold uppercase tracking-widest text-center">Home</span>
           </button>
           <button 
             onClick={() => setView('deen')} 
             className={`flex flex-col items-center space-y-1 transition-colors ${view === 'deen' ? 'text-emerald-600' : 'text-slate-400'}`}
           >
-            <Activity className="w-6 h-6" />
-            <span className="text-[10px] font-bold uppercase tracking-widest">Deen</span>
+            <Activity className="w-5 h-5 sm:w-6 sm:h-6" />
+            <span className="text-[8px] sm:text-[10px] font-bold uppercase tracking-widest text-center">Deen</span>
           </button>
           <button 
             onClick={() => setView('chat')} 
             className={`flex flex-col items-center space-y-1 transition-colors ${view === 'chat' ? 'text-emerald-600' : 'text-slate-400'}`}
           >
-            <MessageSquare className="w-6 h-6" />
-            <span className="text-[10px] font-bold uppercase tracking-widest">Chat</span>
+            <MessageSquare className="w-5 h-5 sm:w-6 sm:h-6" />
+            <span className="text-[8px] sm:text-[10px] font-bold uppercase tracking-widest text-center">Chat</span>
           </button>
           <button 
             onClick={() => setView('daily-amal')} 
             className={`flex flex-col items-center space-y-1 transition-colors ${view === 'daily-amal' ? 'text-emerald-600' : 'text-slate-400'}`}
           >
-            <Sparkles className="w-6 h-6" />
-            <span className="text-[10px] font-bold uppercase tracking-widest">Daily Amal</span>
+            <Sparkles className="w-5 h-5 sm:w-6 sm:h-6" />
+            <span className="text-[8px] sm:text-[10px] font-bold uppercase tracking-widest text-center">Daily Amal</span>
           </button>
           <button 
             onClick={() => setView('bookmarks')} 
             className={`flex flex-col items-center space-y-1 transition-colors ${view === 'bookmarks' ? 'text-emerald-600' : 'text-slate-400'}`}
           >
-            <Bookmark className="w-6 h-6" />
-            <span className="text-[10px] font-bold uppercase tracking-widest">Bookmarks</span>
+            <Bookmark className="w-5 h-5 sm:w-6 sm:h-6" />
+            <span className="text-[8px] sm:text-[10px] font-bold uppercase tracking-widest text-center">Bookmarks</span>
           </button>
         </div>
       </nav>
