@@ -15,6 +15,7 @@ import {
   Bookmark,
   Sparkles, 
   RefreshCw, 
+  ArrowRight,
   Play, 
   Pause, 
   Flame, 
@@ -23,6 +24,10 @@ import {
   Target,
   Home,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  ScrollText,
+  Info,
   ExternalLink,
   Calendar,
   Clock,
@@ -60,6 +65,7 @@ interface SurahContent {
   surah_name: string;
   surah_meaning: string;
   is_partial?: boolean;
+  short_info?: string;
   verses: {
     text: string;
     translation: string;
@@ -492,6 +498,7 @@ export default function App() {
   const [prayerError, setPrayerError] = useState<string | null>(null);
   const [ayah, setAyah] = useState<Ayah | null>(null);
   const [surahContent, setSurahContent] = useState<SurahContent | null>(null);
+  const [showTafsir, setShowTafsir] = useState(false);
   const [hadith, setHadith] = useState<Hadith | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -777,6 +784,7 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
     }
 
     try {
+      setShowTafsir(false);
       const randomSurah = DAILY_SURAHS[Math.floor(Math.random() * DAILY_SURAHS.length)];
       const surahId = randomSurah.id;
       
@@ -785,8 +793,20 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
       const infoData = await infoRes.json();
       const chapter = infoData.chapter;
 
+      // Fetch Surah Info (Tafsir/Context)
+      let shortInfo = '';
+      try {
+        const chapterInfoRes = await fetch(`${API_BASE}/chapters/${surahId}/info?language=en`);
+        if (chapterInfoRes.ok) {
+          const chapterInfoData = await chapterInfoRes.json();
+          shortInfo = chapterInfoData.chapter_info.text || chapterInfoData.chapter_info.short_text;
+        }
+      } catch (e) {
+        console.warn("Could not fetch surah info:", e);
+      }
+
       const versesRes = await fetch(
-        `${API_BASE}/verses/by_chapter/${surahId}?translations=${TRANSLATION_ID}&fields=text_uthmani&audio=${RECITER_ID}`
+        `${API_BASE}/verses/by_chapter/${surahId}?translations=${TRANSLATION_ID}&words=true&language=en&per_page=300&fields=text_uthmani&audio=${RECITER_ID}`
       );
       if (!versesRes.ok) throw new Error('Could not fetch Surah verses.');
       const versesData = await versesRes.json();
@@ -827,12 +847,13 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
         surah_name: chapter.name_simple,
         surah_meaning: chapter.translated_name.name,
         is_partial: randomSurah.type === 'partial',
+        short_info: shortInfo,
         full_audio_url: fullAudioUrl,
         verses: verses.map((v: any) => ({
           text: v.text_uthmani,
           translation: (v.translations && v.translations.length > 0) 
             ? v.translations[0].text.replace(/<[^>]*>?/gm, '') 
-            : 'Translation not available',
+            : '',
           verse_number: v.verse_number,
           audio_url: v.audio?.url ? (v.audio.url.startsWith('http') ? v.audio.url : `https://audio.qurancdn.com/${v.audio.url}`) : undefined
         }))
@@ -1416,81 +1437,153 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
                   {/* Surah Display Card */}
                   <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
                     <div className="p-8 space-y-8">
-                      <div className="flex justify-between items-center">
-                        <div className="flex flex-col">
-                          <div className="flex items-center gap-2">
-                            <span className="text-emerald-700 font-bold text-lg">
+                      <div className="flex flex-col space-y-6">
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-baseline gap-2">
+                            <h2 className="text-emerald-700 font-bold text-2xl">
                               {surahContent.is_partial ? `Featured Verses from Surah ${surahContent.surah_name}` : surahContent.surah_name}
-                            </span>
-                            <span className="text-slate-400 text-sm font-medium">({surahContent.surah_meaning})</span>
+                            </h2>
+                            <span className="text-slate-400 text-lg font-medium">({surahContent.surah_meaning})</span>
                           </div>
-                          <span className="text-slate-400 text-xs font-bold uppercase tracking-widest">
-                            Surah {surahContent.surah_number} • {surahContent.verses.length} Verses
-                          </span>
+                          
+                          <div className="flex items-center gap-3 text-slate-500">
+                            <span className="bg-slate-100 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest">
+                              Surah {surahContent.surah_number}
+                            </span>
+                            <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
+                            <span className="text-xs font-medium">
+                              {surahContent.verses.length} Verses
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex gap-2">
+
+                        <div className="flex flex-wrap gap-3 pt-4 border-t border-slate-100">
+                          {surahContent.short_info && (
+                            <button 
+                              onClick={() => setShowTafsir(!showTafsir)}
+                              className={`px-4 py-2.5 rounded-2xl transition-all flex items-center gap-2 border text-sm font-bold ${
+                                showTafsir 
+                                  ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-200' 
+                                  : 'bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100'
+                              }`}
+                            >
+                              <ScrollText className="w-4 h-4" />
+                              About Surah
+                            </button>
+                          )}
+                          
                           <button 
                             onClick={playFullSurah}
-                            className={`p-3 rounded-2xl transition-all flex items-center gap-2 border ${
+                            className={`px-4 py-2.5 rounded-2xl transition-all flex items-center gap-2 border text-sm font-bold ${
                               isSequential && isPlaying 
                                 ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg shadow-emerald-200' 
                                 : 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100'
                             }`}
                           >
-                            {isSequential && isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-                            <span className="text-xs font-bold uppercase tracking-wider">
-                              {isSequential && isPlaying ? 'Playing' : 'Listen Surah'}
-                            </span>
+                            {isSequential && isPlaying ? (
+                              <>
+                                <Pause className="w-4 h-4" />
+                                <span>Pause Surah</span>
+                              </>
+                            ) : (
+                              <>
+                                <Play className="w-4 h-4" />
+                                <span>Listen Surah</span>
+                              </>
+                            )}
                           </button>
+
                           <button
                             onClick={fetchDailySurah}
-                            className="p-3 bg-slate-50 text-slate-600 rounded-2xl hover:bg-emerald-50 hover:text-emerald-600 transition-all border border-slate-200"
-                            title="Next Surah"
+                            className="px-4 py-2.5 bg-slate-50 text-slate-600 rounded-2xl hover:bg-emerald-50 hover:text-emerald-600 transition-all border border-slate-200 text-sm font-bold flex items-center gap-2"
                           >
-                            <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+                            <ArrowRight className={`w-4 h-4 ${loading ? 'animate-pulse' : ''}`} />
+                            Next Surah
                           </button>
                         </div>
                       </div>
 
+                      {/* Expandable Surah Info / Tafsir */}
+                      <AnimatePresence>
+                        {showTafsir && surahContent.short_info && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="bg-blue-50/50 rounded-2xl p-6 border border-blue-100 mb-8">
+                              <div className="flex items-center gap-2 mb-4 text-blue-700">
+                                <BookOpenText className="w-5 h-5" />
+                                <h3 className="font-bold text-sm uppercase tracking-wider">Surah Context & Meaning</h3>
+                              </div>
+                              <div 
+                                className="markdown-body text-sm text-slate-700 leading-relaxed prose prose-slate max-w-none max-h-[400px] overflow-y-auto pr-4 custom-scrollbar"
+                                dangerouslySetInnerHTML={{ __html: surahContent.short_info || '' }}
+                              />
+                              <div className="mt-4 pt-4 border-t border-blue-100 flex justify-between items-center">
+                                <span className="text-[10px] text-blue-400 font-medium">Source: Quran.com</span>
+                                <button 
+                                  onClick={() => setShowTafsir(false)}
+                                  className="text-[10px] font-bold text-blue-600 hover:underline flex items-center gap-1"
+                                >
+                                  Close <ChevronUp className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
                       <div className="space-y-12">
                         {surahContent.verses.map((v, idx) => (
                           <div key={idx} className="space-y-6 group">
-                            <div className="flex justify-between items-start gap-4">
-                              <span className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold flex items-center justify-center shrink-0 border border-emerald-100">
-                                {v.verse_number}
-                              </span>
-                              <p className="arabic-text text-3xl md:text-4xl leading-[2] text-right text-slate-800 w-full">
-                                {v.text}
-                              </p>
-                            </div>
-                            <div className="pl-12 space-y-2">
-                              <p className="text-sm text-slate-600 leading-relaxed italic">
-                                {v.translation}
-                              </p>
-                              <div className="flex items-center gap-4">
-                                <button
-                                  onClick={() => toggleBookmark({
-                                    id: 0, // Not strictly needed for bookmark identification
-                                    verse_key: `${surahContent.surah_number}:${v.verse_number}`,
-                                    text_uthmani: v.text,
-                                    translation: v.translation,
-                                    surah_number: surahContent.surah_number,
-                                    ayah_number: v.verse_number,
-                                    surah_name: surahContent.surah_name,
-                                    surah_meaning: surahContent.surah_meaning,
-                                    audio_url: v.audio_url,
-                                    external_link: `https://quran.com/${surahContent.surah_number}/${v.verse_number}`,
-                                    surah_link: `https://quran.com/${surahContent.surah_number}`
-                                  })}
-                                  className={`flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider transition-colors ${
-                                    bookmarks.some(b => b.verse_key === `${surahContent.surah_number}:${v.verse_number}`)
-                                      ? 'text-emerald-600'
-                                      : 'text-slate-400 hover:text-emerald-600'
-                                  }`}
-                                >
-                                  <Heart className={`w-3 h-3 ${bookmarks.some(b => b.verse_key === `${surahContent.surah_number}:${v.verse_number}`) ? 'fill-emerald-600' : ''}`} />
-                                  {bookmarks.some(b => b.verse_key === `${surahContent.surah_number}:${v.verse_number}`) ? 'Bookmarked' : 'Bookmark'}
-                                </button>
+                            <div className="flex gap-6">
+                              {/* Ayah number badge on the side */}
+                              <div className="flex flex-col items-center pt-2">
+                                <span className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold flex items-center justify-center shrink-0 border border-emerald-100">
+                                  {v.verse_number}
+                                </span>
+                              </div>
+                              
+                              <div className="flex-1 space-y-4">
+                                {/* Line 1: Arabic text (right to left, large font) */}
+                                <p className="arabic-text text-3xl md:text-4xl leading-[2] text-right text-slate-800 w-full" dir="rtl">
+                                  {v.text}
+                                </p>
+                                
+                                {/* Line 2: Translation in English (left to right, smaller font, grey color) */}
+                                {v.translation && (
+                                  <p className="text-sm text-slate-500 leading-relaxed text-left">
+                                    {v.translation}
+                                  </p>
+                                )}
+
+                                <div className="flex items-center gap-4">
+                                  <button
+                                    onClick={() => toggleBookmark({
+                                      id: 0, // Not strictly needed for bookmark identification
+                                      verse_key: `${surahContent.surah_number}:${v.verse_number}`,
+                                      text_uthmani: v.text,
+                                      translation: v.translation,
+                                      surah_number: surahContent.surah_number,
+                                      ayah_number: v.verse_number,
+                                      surah_name: surahContent.surah_name,
+                                      surah_meaning: surahContent.surah_meaning,
+                                      audio_url: v.audio_url,
+                                      external_link: `https://quran.com/${surahContent.surah_number}/${v.verse_number}`,
+                                      surah_link: `https://quran.com/${surahContent.surah_number}`
+                                    })}
+                                    className={`flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                                      bookmarks.some(b => b.verse_key === `${surahContent.surah_number}:${v.verse_number}`)
+                                        ? 'text-emerald-600'
+                                        : 'text-slate-400 hover:text-emerald-600'
+                                    }`}
+                                  >
+                                    <Heart className={`w-3 h-3 ${bookmarks.some(b => b.verse_key === `${surahContent.surah_number}:${v.verse_number}`) ? 'fill-emerald-600' : ''}`} />
+                                    {bookmarks.some(b => b.verse_key === `${surahContent.surah_number}:${v.verse_number}`) ? 'Bookmarked' : 'Bookmark'}
+                                  </button>
+                                </div>
                               </div>
                             </div>
                             {idx < surahContent.verses.length - 1 && (
