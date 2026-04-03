@@ -906,6 +906,26 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
           text: "The most beloved of deeds to Allah are those that are most consistent, even if they are small.",
           source: "Sahih Bukhari",
           reference: "Book 81, Hadith 6464"
+        },
+        {
+          text: "There was a man from among those who were before you who killed ninety-nine people. He then asked about the most knowledgeable person on earth and was directed to a monk. He went to him and said that he had killed ninety-nine people, and asked if there was any repentance for him. The monk said: 'No.' So he killed him and completed one hundred. He then asked about the most knowledgeable person on earth and was directed to a scholar. He said that he had killed one hundred people and asked if there was any repentance for him. The scholar said: 'Yes, what could stand between you and repentance? Go to such and such a land, for in it there are people who worship Allah. Worship Allah with them and do not return to your own land, for it is an evil place.' So he set out, but when he was halfway there, death came to him. The angels of mercy and the angels of punishment argued over him. The angels of mercy said: 'He came repentant, turning with his heart towards Allah.' The angels of punishment said: 'He never did anything good.' An angel in the form of a man came to them and they made him an arbiter between them. He said: 'Measure the distance between the two lands, and whichever one he is closer to, that is where he belongs.' They measured it and found that he was closer to the land he was heading towards, so the angels of mercy took him.",
+          source: "Sahih Bukhari & Muslim",
+          reference: "Book 46, Hadith 3470"
+        },
+        {
+          text: "Three men were traveling when they were overtaken by rain and took shelter in a cave in a mountain. A rock fell from the mountain and blocked the entrance to the cave. They said to one another: 'Nothing can save you from this rock except that you supplicate to Allah by virtue of your good deeds.' One of them said: 'O Allah, I had elderly parents and I used to bring them milk every evening. One day I was delayed and found them sleeping. I did not want to wake them or give the milk to my children before them, so I waited with the bowl in my hand until dawn. If I did this seeking Your pleasure, then release us from this rock.' The rock moved slightly. The second said: 'O Allah, I had a cousin whom I loved dearly. I tried to seduce her but she refused until I gave her a hundred dinars. When I was about to touch her, she said: \"Fear Allah and do not break the seal except rightfully.\" So I left her and the money. If I did this seeking Your pleasure, then release us from this rock.' The rock moved further. The third said: 'O Allah, I hired some laborers and paid them all except one who left without taking his wage. I invested his wage until it grew into many cattle and servants. Years later he came and asked for his wage. I said: \"All these cattle and servants are yours.\" He said: \"Do not mock me.\" I said: \"I am not mocking you.\" So he took them all. If I did this seeking Your pleasure, then release us from this rock.' The rock moved and they were able to walk out.",
+          source: "Sahih Bukhari & Muslim",
+          reference: "Book 34, Hadith 2215"
+        },
+        {
+          text: "While a man was walking on a road, he became very thirsty and found a well. He went down into it, drank, and came out. There he saw a dog panting and eating moist earth because of thirst. The man said: 'This dog is suffering from the same problem as that of mine.' So he went down into the well again, filled his shoe with water, held it with his teeth, and climbed up and watered the dog. Allah thanked him for his (good) deed and forgave him. The people asked: 'O Allah's Messenger! Is there a reward for us in serving the animals?' He replied: 'Yes, there is a reward for serving any living being.'",
+          source: "Sahih Bukhari",
+          reference: "Book 42, Hadith 2363"
+        },
+        {
+          text: "The last person to enter Paradise will be a man who will walk once, stumble once, and be burned by the Fire once. When he gets past it, he will turn back and say: 'Blessed be He Who has saved me from you. Allah has given me something He has not given to any of those of old or those of later times.' Then a tree will be raised up for him and he will say: 'O my Lord, bring me near to this tree so that I may take shelter in its shade and drink of its water.' Allah will say: 'O son of Adam, if I give you this, will you ask for anything else?' He will say: 'No, my Lord,' and he will promise Him that he will not ask for anything else. His Lord will excuse him because he is seeing something that he cannot help wanting. So He will bring him near to it and he will take shelter in its shade and drink of its water. Then another tree will be raised up for him that is more beautiful than the first... until he enters Paradise and Allah says: 'You shall have all that and ten times more.'",
+          source: "Sahih Muslim",
+          reference: "Book 1, Hadith 187"
         }
       ];
       const randomHadith = hadiths[Math.floor(Math.random() * hadiths.length)];
@@ -1609,7 +1629,15 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
                     <div className="p-8 space-y-8">
                       <div className="flex justify-between items-center">
                         <div className="flex flex-col">
-                          <span className="text-emerald-700 font-bold text-lg">Daily Hadith</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-emerald-700 font-bold text-lg">Daily Hadith</span>
+                            {hadith.text.length > 200 && (
+                              <span className="bg-amber-100 text-amber-700 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1">
+                                <Sparkles className="w-3 h-3" />
+                                Narrative
+                              </span>
+                            )}
+                          </div>
                           <span className="text-slate-400 text-xs font-bold uppercase tracking-widest">
                             {hadith.source}
                           </span>
@@ -1617,7 +1645,7 @@ Always start with a warm Islamic greeting if it's the beginning of a conversatio
                       </div>
 
                       <div className="p-4">
-                        <p className="text-xl md:text-2xl leading-relaxed text-slate-800 font-medium italic">
+                        <p className={`${hadith.text.length > 200 ? 'text-lg md:text-xl' : 'text-xl md:text-2xl'} leading-relaxed text-slate-800 font-medium italic`}>
                           "{hadith.text}"
                         </p>
                       </div>
